@@ -1,0 +1,19 @@
+# Python cache
+__pycache__/
+*.pyc
+
+# Virtual environment
+venv/
+
+# Environment secrets
+.env
+
+# Local database
+flood_risk_history.db
+
+# Frontend dependencies and build files
+frontend/node_modules/
+frontend/dist/
+
+# Debug and log files
+*.log
