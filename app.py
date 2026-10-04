@@ -1356,56 +1356,7 @@ if __name__ == "__main__":
     app.run(
         debug=True
     )
-# --------------------------------------------------
-# PREDICTION HISTORY API
-# --------------------------------------------------
-
-@app.route("/prediction-history")
-def prediction_history():
-
-    connection = sqlite3.connect(
-        DATABASE_PATH
-    )
-
-    connection.row_factory = sqlite3.Row
-
-    cursor = connection.cursor()
-
-    cursor.execute("""
-        SELECT
-            id,
-            latitude,
-            longitude,
-            flood_risk,
-            confidence,
-            rainfall_24h,
-            rainfall_72h,
-            temperature,
-            humidity,
-            created_at
-        FROM prediction_history
-        ORDER BY id DESC
-        LIMIT 20
-    """)
-
-    rows = cursor.fetchall()
-
-    connection.close()
-
-    history = [
-        dict(row)
-        for row in rows
-    ]
-
-    return jsonify({
-
-        "count":
-            len(history),
-
-        "history":
-            history
-    })
-
+      
 
 # --------------------------------------------------
 # RUN APPLICATION
