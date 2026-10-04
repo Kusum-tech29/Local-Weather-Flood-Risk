@@ -4,4 +4,6 @@ flask-cors
 python-dotenv
 requests
 joblib
+numpy
 scikit-learn
+pandas
