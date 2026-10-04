@@ -6,13 +6,12 @@ import os
 import sqlite3
 import joblib
 import pandas as pd
-
+from math import radians, sin, cos, asin, sqrt
 
 load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
-
 
 # --------------------------------------------------
 # CONFIGURATION
@@ -20,11 +19,7 @@ CORS(app)
 
 WEATHER_API_URL = os.getenv("WEATHER_API_URL")
 DATABASE_PATH = "flood_risk_history.db"
-
-MODEL_PATH = os.path.join(
-    "models",
-    "flood_risk_model.joblib"
-)
+MODEL_PATH = os.path.join("models", "flood_risk_model.joblib")
 
 
 # --------------------------------------------------
@@ -37,7 +32,6 @@ model_features = None
 
 try:
     model_package = joblib.load(MODEL_PATH)
-
     ml_model = model_package["model"]
     model_features = model_package["features"]
 
@@ -59,6 +53,7 @@ def home():
         "ml_model_loaded": ml_model is not None
     })
 
+
 # --------------------------------------------------
 # CITY / LOCATION SEARCH API
 # --------------------------------------------------
@@ -78,7 +73,7 @@ def search_location():
             "error": "City or location name must contain at least 2 characters"
         }), 400
 
-    try:    
+    try:
         geocoding_url = (
             "https://geocoding-api.open-meteo.com/v1/search"
         )
@@ -99,7 +94,6 @@ def search_location():
         response.raise_for_status()
 
         data = response.json()
-
         results = data.get("results", [])
 
         if not results:
@@ -131,11 +125,14 @@ def search_location():
             "error": "Location search service failed",
             "details": str(error)
         }), 500
-    # --------------------------------------------------
+
+
+# --------------------------------------------------
 # PREDICTION HISTORY DATABASE
 # --------------------------------------------------
 
 def init_database():
+
     connection = sqlite3.connect(DATABASE_PATH)
     cursor = connection.cursor()
 
@@ -156,8 +153,167 @@ def init_database():
 
     connection.commit()
     connection.close()
+
+
 # --------------------------------------------------
-# WEATHER DATA FUNCTION
+# DISTANCE CALCULATION
+# --------------------------------------------------
+
+def calculate_distance_km(
+    lat1,
+    lon1,
+    lat2,
+    lon2
+):
+
+    earth_radius_km = 6371.0
+
+    lat1_rad = radians(lat1)
+    lat2_rad = radians(lat2)
+
+    delta_lat = radians(lat2 - lat1)
+    delta_lon = radians(lon2 - lon1)
+
+    a = (
+        sin(delta_lat / 2) ** 2
+        + cos(lat1_rad)
+        * cos(lat2_rad)
+        * sin(delta_lon / 2) ** 2
+    )
+
+    return (
+        2
+        * earth_radius_km
+        * asin(sqrt(a))
+    )
+
+
+# --------------------------------------------------
+# WATER FEATURE / RIVER PROXIMITY
+# --------------------------------------------------
+
+def get_nearby_water_feature(latitude, longitude):
+
+    nominatim_url = (
+        "https://nominatim.openstreetmap.org/search"
+    )
+
+    reverse_url = (
+        "https://nominatim.openstreetmap.org/reverse"
+    )
+
+    headers = {
+        "User-Agent": "LocalWeatherFloodRisk/1.0"
+    }
+
+    # Reverse geocode
+    reverse_params = {
+        "lat": latitude,
+        "lon": longitude,
+        "format": "json",
+        "zoom": 10
+    }
+
+    reverse_response = requests.get(
+        reverse_url,
+        params=reverse_params,
+        headers=headers,
+        timeout=15
+    )
+
+    reverse_response.raise_for_status()
+
+    reverse_data = reverse_response.json()
+
+    address = reverse_data.get("address", {})
+
+    city = (
+        address.get("city")
+        or address.get("town")
+        or address.get("municipality")
+        or address.get("county")
+        or ""
+    )
+
+    state = address.get("state", "")
+
+    # Search nearby river
+    if city:
+        query = (
+            f"river near {city}, {state}, India"
+        )
+    else:
+        query = (
+            f"river near {latitude}, {longitude}"
+        )
+
+    params = {
+        "q": query,
+        "format": "json",
+        "limit": 10
+    }
+
+    response = requests.get(
+        nominatim_url,
+        params=params,
+        headers=headers,
+        timeout=15
+    )
+
+    response.raise_for_status()
+
+    results = response.json()
+
+    # Keep actual waterway features
+    water_features = [
+        item
+        for item in results
+        if item.get("class") == "waterway"
+        and item.get("type") in [
+            "river",
+            "stream",
+            "canal"
+        ]
+        and item.get("lat")
+        and item.get("lon")
+    ]
+
+    if not water_features:
+        return None
+
+    # Find nearest water feature
+    nearest = min(
+        water_features,
+        key=lambda item: calculate_distance_km(
+            latitude,
+            longitude,
+            float(item["lat"]),
+            float(item["lon"])
+        )
+    )
+
+    distance_km = calculate_distance_km(
+        latitude,
+        longitude,
+        float(nearest["lat"]),
+        float(nearest["lon"])
+    )
+
+    return {
+        "name": nearest.get(
+            "name",
+            "Water Feature"
+        ),
+        "type": nearest.get("type"),
+        "latitude": float(nearest["lat"]),
+        "longitude": float(nearest["lon"]),
+        "distance_km": round(distance_km, 2),
+        "near_water_feature": distance_km <= 5
+    }
+
+
+# --------------------------------------------------
+# WEATHER DATA
 # --------------------------------------------------
 
 def get_weather_data(latitude, longitude):
@@ -170,6 +326,7 @@ def get_weather_data(latitude, longitude):
     params = {
         "latitude": latitude,
         "longitude": longitude,
+
         "current": (
             "temperature_2m,"
             "relative_humidity_2m,"
@@ -177,12 +334,14 @@ def get_weather_data(latitude, longitude):
             "rain,"
             "weather_code"
         ),
+
         "hourly": (
             "precipitation,"
             "rain,"
             "temperature_2m,"
             "relative_humidity_2m"
         ),
+
         "forecast_days": 3,
         "timezone": "Asia/Kolkata"
     }
@@ -194,19 +353,23 @@ def get_weather_data(latitude, longitude):
     )
 
     response.raise_for_status()
+
     return response.json()
 
+
 # --------------------------------------------------
-# TERRAIN / ELEVATION DATA
+# ELEVATION DATA
 # --------------------------------------------------
 
 def get_elevation_data(latitude, longitude):
 
-    elevation_url = "https://api.open-meteo.com/v1/elevation"
+    elevation_url = (
+        "https://api.open-meteo.com/v1/elevation"
+    )
 
     params = {
         "latitude": latitude,
-        "longitude": longitude,
+        "longitude": longitude
     }
 
     response = requests.get(
@@ -219,7 +382,10 @@ def get_elevation_data(latitude, longitude):
 
     data = response.json()
 
-    elevation_values = data.get("elevation", [])
+    elevation_values = data.get(
+        "elevation",
+        []
+    )
 
     if not elevation_values:
         raise ValueError(
@@ -227,7 +393,6 @@ def get_elevation_data(latitude, longitude):
         )
 
     return float(elevation_values[0])
-    
 
 
 # --------------------------------------------------
@@ -250,8 +415,10 @@ def test_weather():
     if latitude is None or longitude is None:
 
         return jsonify({
-            "error":
-            "Please provide latitude and longitude"
+            "error": (
+                "Please provide latitude "
+                "and longitude"
+            )
         }), 400
 
     try:
@@ -264,62 +431,57 @@ def test_weather():
         return jsonify({
 
             "location": {
-                "latitude":
-                weather_data["latitude"],
-
-                "longitude":
-                weather_data["longitude"]
+                "latitude": weather_data["latitude"],
+                "longitude": weather_data["longitude"]
             },
 
             "current": {
-                "temperature":
-                weather_data["current"][
-                    "temperature_2m"
-                ],
+                "temperature": weather_data[
+                    "current"
+                ]["temperature_2m"],
 
-                "humidity":
-                weather_data["current"][
-                    "relative_humidity_2m"
-                ],
+                "humidity": weather_data[
+                    "current"
+                ]["relative_humidity_2m"],
 
-                "rain":
-                weather_data["current"]["rain"],
+                "rain": weather_data[
+                    "current"
+                ]["rain"],
 
-                "precipitation":
-                weather_data["current"][
-                    "precipitation"
-                ],
+                "precipitation": weather_data[
+                    "current"
+                ]["precipitation"],
 
-                "weather_code":
-                weather_data["current"][
-                    "weather_code"
-                ],
+                "weather_code": weather_data[
+                    "current"
+                ]["weather_code"],
 
-                "time":
-                weather_data["current"]["time"]
+                "time": weather_data[
+                    "current"
+                ]["time"]
             },
 
             "forecast": {
-                "time":
-                weather_data["hourly"]["time"],
 
-                "precipitation":
-                weather_data["hourly"][
-                    "precipitation"
-                ],
+                "time": weather_data[
+                    "hourly"
+                ]["time"],
 
-                "rain":
-                weather_data["hourly"]["rain"],
+                "precipitation": weather_data[
+                    "hourly"
+                ]["precipitation"],
 
-                "temperature":
-                weather_data["hourly"][
-                    "temperature_2m"
-                ],
+                "rain": weather_data[
+                    "hourly"
+                ]["rain"],
 
-                "humidity":
-                weather_data["hourly"][
-                    "relative_humidity_2m"
-                ]
+                "temperature": weather_data[
+                    "hourly"
+                ]["temperature_2m"],
+
+                "humidity": weather_data[
+                    "hourly"
+                ]["relative_humidity_2m"]
             },
 
             "units": {
@@ -340,17 +502,15 @@ def test_weather():
     except KeyError as error:
 
         return jsonify({
-            "error":
-            "Unexpected weather data format",
-
-            "details":
-            str(error)
+            "error": "Unexpected weather data format",
+            "details": str(error)
         }), 500
 
 
 # --------------------------------------------------
-# ML FLOOD RISK PREDICTION
+# SAVE PREDICTION HISTORY
 # --------------------------------------------------
+
 def save_prediction_history(
     latitude,
     longitude,
@@ -359,24 +519,30 @@ def save_prediction_history(
     rainfall_24h,
     rainfall_72h,
     temperature,
-    humidity,
+    humidity
 ):
-    connection = sqlite3.connect(DATABASE_PATH)
+
+    connection = sqlite3.connect(
+        DATABASE_PATH
+    )
+
     cursor = connection.cursor()
 
-    # Remove previous predictions for the same location
+    # Remove previous prediction
+    # for the exact same location
     cursor.execute(
         """
         DELETE FROM prediction_history
-        WHERE latitude = ? AND longitude = ?
+        WHERE latitude = ?
+        AND longitude = ?
         """,
         (
             latitude,
-            longitude,
-        ),
+            longitude
+        )
     )
 
-    # Save only the latest prediction
+    # Save latest prediction
     cursor.execute(
         """
         INSERT INTO prediction_history (
@@ -399,12 +565,14 @@ def save_prediction_history(
             rainfall_24h,
             rainfall_72h,
             temperature,
-            humidity,
-        ),
+            humidity
+        )
     )
 
     connection.commit()
     connection.close()
+
+
 # --------------------------------------------------
 # ML FLOOD RISK PREDICTION
 # --------------------------------------------------
@@ -413,7 +581,7 @@ def predict_flood_risk(features):
 
     if ml_model is None:
         raise RuntimeError(
-            "Flood risk ML model is not available"
+            "Flood risk model is not available"
         )
 
     if not model_features:
@@ -440,7 +608,10 @@ def predict_flood_risk(features):
         ml_model.classes_,
         probabilities
     ):
-        probability_map[str(class_name)] = round(
+
+        probability_map[
+            str(class_name)
+        ] = round(
             float(probability) * 100,
             2
         )
@@ -461,66 +632,146 @@ def predict_flood_risk(features):
 # FLOOD RISK API
 # --------------------------------------------------
 
-@app.route("/flood-risk")
+@app.route(
+    "/flood-risk",
+    methods=["POST"]
+)
 def flood_risk():
 
-    latitude = request.args.get(
-        "lat",
-        type=float
+    # Read JSON request
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    latitude = data.get(
+        "latitude"
     )
 
-    longitude = request.args.get(
-        "lon",
-        type=float
+    longitude = data.get(
+        "longitude"
     )
 
-    # ------------------------------------------
+    # Convert coordinates to float
+    try:
+
+        if latitude is not None:
+            latitude = float(latitude)
+
+        if longitude is not None:
+            longitude = float(longitude)
+
+    except (TypeError, ValueError):
+
+        return jsonify({
+            "error": (
+                "Latitude and longitude "
+                "must be valid numbers"
+            )
+        }), 400
+
+    # --------------------------------------------------
     # COORDINATE VALIDATION
-    # ------------------------------------------
+    # --------------------------------------------------
 
     if latitude is None or longitude is None:
+
         return jsonify({
-            "error": "Please provide valid latitude and longitude"
+            "error": (
+                "Please provide valid "
+                "latitude and longitude"
+            )
         }), 400
 
     if not (-90 <= latitude <= 90):
+
         return jsonify({
-            "error": "Latitude must be between -90 and 90"
+            "error": (
+                "Latitude must be between "
+                "-90 and 90"
+            )
         }), 400
 
     if not (-180 <= longitude <= 180):
+
         return jsonify({
-            "error": "Longitude must be between -180 and 180"
+            "error": (
+                "Longitude must be between "
+                "-180 and 180"
+            )
         }), 400
+
+    # --------------------------------------------------
+    # MAIN PROCESS
+    # --------------------------------------------------
 
     try:
 
+        # Weather
         weather_data = get_weather_data(
             latitude,
             longitude
         )
+
+        # Elevation
         elevation = get_elevation_data(
-    latitude,
-    longitude
-)
-        current = weather_data["current"]
-        hourly = weather_data["hourly"]
+            latitude,
+            longitude
+        )
+
+        # Water feature
+        try:
+
+            water_feature = (
+                get_nearby_water_feature(
+                    latitude,
+                    longitude
+                )
+            )
+
+        except requests.exceptions.RequestException as error:
+
+            print(
+                "WARNING: Water feature lookup failed:",
+                error
+            )
+
+            water_feature = None
+
+        current = weather_data[
+            "current"
+        ]
+
+        hourly = weather_data[
+            "hourly"
+        ]
+
+        # --------------------------------------------------
+        # PRECIPITATION DATA
+        # --------------------------------------------------
 
         precipitation = [
+
             value if value is not None else 0
-            for value in hourly["precipitation"]
+
+            for value in hourly.get(
+                "precipitation",
+                []
+            )
         ]
 
         if not precipitation:
+
             raise ValueError(
-                "Weather API returned no precipitation forecast data"
+                "Weather API returned no "
+                "precipitation forecast data"
             )
 
-        # ------------------------------------------
+        # --------------------------------------------------
         # RAINFALL FEATURES
-        # ------------------------------------------
+        # --------------------------------------------------
 
         next_24h = precipitation[:24]
+
         next_72h = precipitation[:72]
 
         rainfall_24h = round(
@@ -538,13 +789,17 @@ def flood_risk():
             2
         )
 
-        current_humidity = (
-            current["relative_humidity_2m"]
-        )
+        # --------------------------------------------------
+        # CURRENT WEATHER
+        # --------------------------------------------------
 
-        current_temperature = (
-            current["temperature_2m"]
-        )
+        current_humidity = current[
+            "relative_humidity_2m"
+        ]
+
+        current_temperature = current[
+            "temperature_2m"
+        ]
 
         current_rain = (
             current["rain"]
@@ -552,149 +807,272 @@ def flood_risk():
             else 0
         )
 
-        # ------------------------------------------
+        # --------------------------------------------------
         # ML FEATURES
-        # ------------------------------------------
+        # --------------------------------------------------
 
         features = {
-            "rainfall_24h": rainfall_24h,
-            "rainfall_72h": rainfall_72h,
-            "max_hourly_rain": max_hourly_rain,
-            "humidity": current_humidity,
-            "temperature": current_temperature,
-            "current_rain": current_rain
+
+            "rainfall_24h":
+                rainfall_24h,
+
+            "rainfall_72h":
+                rainfall_72h,
+
+            "max_hourly_rain":
+                max_hourly_rain,
+
+            "humidity":
+                current_humidity,
+
+            "temperature":
+                current_temperature,
+
+            "current_rain":
+                current_rain
         }
 
-        # ------------------------------------------
-        # MACHINE LEARNING PREDICTION
-        # ------------------------------------------
+        # --------------------------------------------------
+        # ML PREDICTION
+        # --------------------------------------------------
 
         (
             risk_level,
             confidence,
             probabilities
-        ) = predict_flood_risk(features)
-
-        # ------------------------------------------
-        # SAVE PREDICTION HISTORY
-        # ------------------------------------------
-
-        save_prediction_history(
-            latitude=latitude,
-            longitude=longitude,
-            flood_risk=risk_level,
-            confidence=confidence,
-            rainfall_24h=rainfall_24h,
-            rainfall_72h=rainfall_72h,
-            temperature=current_temperature,
-            humidity=current_humidity,
+        ) = predict_flood_risk(
+            features
         )
 
-        # ------------------------------------------
+        # --------------------------------------------------
+        # SAVE HISTORY
+        # --------------------------------------------------
+
+        save_prediction_history(
+
+            latitude=latitude,
+
+            longitude=longitude,
+
+            flood_risk=risk_level,
+
+            confidence=confidence,
+
+            rainfall_24h=rainfall_24h,
+
+            rainfall_72h=rainfall_72h,
+
+            temperature=current_temperature,
+
+            humidity=current_humidity
+        )
+
+        # --------------------------------------------------
         # RISK FACTORS
-        # ------------------------------------------
+        # --------------------------------------------------
 
         risk_factors = []
 
         if rainfall_24h >= 35:
+
             risk_factors.append(
                 "Very high rainfall expected "
                 "during the next 24 hours"
             )
 
         elif rainfall_24h >= 16:
+
             risk_factors.append(
                 "Significant rainfall expected "
                 "during the next 24 hours"
             )
 
         if rainfall_72h >= 89:
+
             risk_factors.append(
                 "Very high accumulated rainfall "
                 "expected over 72 hours"
             )
 
         elif rainfall_72h >= 42:
+
             risk_factors.append(
                 "Significant accumulated rainfall "
                 "expected over 72 hours"
             )
 
         if max_hourly_rain >= 12:
+
             risk_factors.append(
                 "High rainfall intensity detected"
             )
 
         elif max_hourly_rain >= 6:
+
             risk_factors.append(
                 "Moderate rainfall intensity detected"
             )
 
         if current_humidity >= 90:
+
             risk_factors.append(
                 "Very high humidity"
             )
 
         elif current_humidity >= 80:
+
             risk_factors.append(
                 "High humidity"
             )
 
         if current_rain > 0:
+
             risk_factors.append(
                 "Rainfall currently occurring"
             )
 
+        # Water feature risk
+        if (
+            water_feature
+            and water_feature.get(
+                "near_water_feature"
+            )
+        ):
+
+            risk_factors.append(
+
+                f"Nearby water feature detected: "
+                f"{water_feature.get('name', 'Water Feature')} "
+                f"({water_feature.get('distance_km')} km away)"
+            )
+
         if not risk_factors:
+
             risk_factors.append(
                 "No major rainfall risk factors detected"
             )
+                # --------------------------------------------------
+        # DYNAMIC AI RISK EXPLANATION
+        # --------------------------------------------------
 
-        # ------------------------------------------
+        explanation_parts = []
+
+        explanation_parts.append(
+            f"AI model predicts {risk_level} flood risk "
+            f"with {confidence:.2f}% confidence."
+        )
+
+        explanation_parts.append(
+            f"Rainfall forecast is {rainfall_24h:.1f} mm "
+            f"for the next 24 hours and "
+            f"{rainfall_72h:.1f} mm over the next 72 hours."
+        )
+
+        if max_hourly_rain > 0:
+            explanation_parts.append(
+                f"Peak hourly rainfall is "
+                f"{max_hourly_rain:.1f} mm."
+            )
+
+        if current_humidity >= 80:
+            explanation_parts.append(
+                f"Humidity is high at "
+                f"{current_humidity:.0f}%."
+            )
+
+        if water_feature and water_feature.get(
+            "near_water_feature"
+        ):
+            explanation_parts.append(
+                f"A nearby water feature, "
+                f"{water_feature.get('name', 'Water Feature')}, "
+                f"is approximately "
+                f"{water_feature.get('distance_km')} km away."
+            )
+
+        risk_explanation = " ".join(explanation_parts)
+            
+        # --------------------------------------------------
         # RESPONSE
-        # ------------------------------------------
+        # --------------------------------------------------
 
         return jsonify({
 
             "location": {
-                "latitude": weather_data["latitude"],
-                "longitude": weather_data["longitude"]
+
+                "latitude":
+                    weather_data["latitude"],
+
+                "longitude":
+                    weather_data["longitude"]
             },
 
             "prediction": {
-                "flood_risk": risk_level,
-                "confidence_percent": confidence,
-                "class_probabilities": probabilities,
-                "model": "Random Forest"
+
+                "flood_risk":
+                    risk_level,
+
+                "confidence_percent":
+                    confidence,
+
+                "class_probabilities":
+                    probabilities,
+
+                "model":
+                    "Random Forest"
             },
 
             "rainfall_analysis": {
-                "next_24_hours_mm": rainfall_24h,
-                "next_72_hours_mm": rainfall_72h,
-                "maximum_hourly_rain_mm": max_hourly_rain
+
+                "next_24_hours_mm":
+                    rainfall_24h,
+
+                "next_72_hours_mm":
+                    rainfall_72h,
+
+                "maximum_hourly_rain_mm":
+                    max_hourly_rain
             },
 
             "weather_conditions": {
-    "current_temperature_c": current_temperature,
-    "current_humidity_percent": current_humidity,
-    "current_rain_mm": current_rain,
-    "elevation_m": elevation
-},
 
-            "risk_factors": risk_factors,
+                "current_humidity_percent":
+                    current_humidity,
 
+                "current_rain_mm":
+                    current_rain,
+
+                "current_temperature_c":
+                    current_temperature,
+
+                "elevation_m":
+                    elevation,
+
+                "nearby_water_feature":
+                    water_feature
+            },
+
+            "risk_factors":
+                risk_factors,
+            "risk_explanation":
+                risk_explanation,
             "disclaimer": (
                 "Flood risk is an AI-assisted "
-                "rainfall-based risk estimate and "
-                "is not an official flood warning."
+                "rainfall-based risk estimate "
+                "and is not an official flood warning."
             )
         })
 
     except requests.exceptions.RequestException as error:
 
         return jsonify({
-            "error": "Weather API request failed",
-            "details": str(error)
+
+            "error":
+                "Weather API request failed",
+
+            "details":
+                str(error)
+
         }), 500
 
     except (
@@ -704,9 +1082,216 @@ def flood_risk():
     ) as error:
 
         return jsonify({
-            "error": "Unable to calculate flood risk",
-            "details": str(error)
+
+            "error":
+                "Unable to calculate flood risk",
+
+            "details":
+                str(error)
+
         }), 500
+
+# --------------------------------------------------
+# TEST FLOOD RISK API
+# --------------------------------------------------
+
+@app.route("/test-flood-risk", methods=["POST"])
+def test_flood_risk():
+
+    data = request.get_json(
+        silent=True
+    ) or {}
+
+    test_case = data.get(
+        "test_case",
+        "LOW"
+    ).upper()
+
+    test_inputs = {
+
+        "LOW": {
+            "rainfall_24h": 2,
+            "rainfall_72h": 5,
+            "max_hourly_rain": 0.5,
+            "humidity": 60,
+            "temperature": 25,
+            "current_rain": 0
+        },
+
+        "MEDIUM": {
+            "rainfall_24h": 20,
+            "rainfall_72h": 50,
+            "max_hourly_rain": 7,
+            "humidity": 85,
+            "temperature": 25,
+            "current_rain": 2
+        },
+
+        "HIGH": {
+            "rainfall_24h": 40,
+            "rainfall_72h": 100,
+            "max_hourly_rain": 15,
+            "humidity": 90,
+            "temperature": 25,
+            "current_rain": 5
+        }
+    }
+
+    if test_case not in test_inputs:
+
+        return jsonify({
+            "error": (
+                "Invalid test_case. "
+                "Use LOW, MEDIUM or HIGH."
+            )
+        }), 400
+
+    features = test_inputs[test_case]
+
+    (
+        risk_level,
+        confidence,
+        probabilities
+    ) = predict_flood_risk(
+        features
+    )
+
+    # --------------------------------------------------
+    # SIMULATED RISK FACTORS
+    # --------------------------------------------------
+
+    risk_factors = []
+
+    if features["rainfall_24h"] >= 35:
+
+        risk_factors.append(
+            "Very high simulated rainfall "
+            "during the next 24 hours"
+        )
+
+    elif features["rainfall_24h"] >= 16:
+
+        risk_factors.append(
+            "Significant simulated rainfall "
+            "during the next 24 hours"
+        )
+
+    if features["rainfall_72h"] >= 89:
+
+        risk_factors.append(
+            "Very high simulated accumulated "
+            "rainfall over 72 hours"
+        )
+
+    elif features["rainfall_72h"] >= 42:
+
+        risk_factors.append(
+            "Significant simulated accumulated "
+            "rainfall over 72 hours"
+        )
+
+    if features["max_hourly_rain"] >= 12:
+
+        risk_factors.append(
+            "High simulated rainfall intensity"
+        )
+
+    elif features["max_hourly_rain"] >= 6:
+
+        risk_factors.append(
+            "Moderate simulated rainfall intensity"
+        )
+
+    if features["humidity"] >= 90:
+
+        risk_factors.append(
+            "Very high simulated humidity"
+        )
+
+    elif features["humidity"] >= 80:
+
+        risk_factors.append(
+            "High simulated humidity"
+        )
+
+    if features["current_rain"] > 0:
+
+        risk_factors.append(
+            "Simulated rainfall is currently occurring"
+        )
+
+    if not risk_factors:
+
+        risk_factors.append(
+            "No major simulated rainfall "
+            "risk factors detected"
+        )
+
+    # --------------------------------------------------
+    # SIMULATED AI EXPLANATION
+    # --------------------------------------------------
+
+    if risk_level == "HIGH":
+
+        risk_explanation = (
+            f"AI test scenario predicts HIGH flood risk "
+            f"with {confidence}% confidence under "
+            "simulated heavy-rainfall conditions."
+        )
+
+    elif risk_level == "MEDIUM":
+
+        risk_explanation = (
+            f"AI test scenario predicts MEDIUM flood risk "
+            f"with {confidence}% confidence under "
+            "simulated moderate-rainfall conditions."
+        )
+
+    else:
+
+        risk_explanation = (
+            f"AI test scenario predicts LOW flood risk "
+            f"with {confidence}% confidence under "
+            "simulated low-rainfall conditions."
+        )
+
+    # --------------------------------------------------
+    # RESPONSE
+    # --------------------------------------------------
+
+    return jsonify({
+
+        "test_case":
+            test_case,
+
+        "prediction": {
+
+            "flood_risk":
+                risk_level,
+
+            "confidence_percent":
+                confidence,
+
+            "class_probabilities":
+                probabilities,
+
+            "model":
+                "Random Forest"
+        },
+
+        "test_features":
+            features,
+
+        "risk_factors":
+            risk_factors,
+
+        "risk_explanation":
+            risk_explanation,
+
+        "note":
+            "This endpoint is for UI testing only. "
+            "It does not use live weather data."
+    })
 
 
 # --------------------------------------------------
@@ -716,8 +1301,12 @@ def flood_risk():
 @app.route("/prediction-history")
 def prediction_history():
 
-    connection = sqlite3.connect(DATABASE_PATH)
+    connection = sqlite3.connect(
+        DATABASE_PATH
+    )
+
     connection.row_factory = sqlite3.Row
+
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -738,6 +1327,7 @@ def prediction_history():
     """)
 
     rows = cursor.fetchall()
+
     connection.close()
 
     history = [
@@ -746,8 +1336,12 @@ def prediction_history():
     ]
 
     return jsonify({
-        "count": len(history),
-        "history": history
+
+        "count":
+            len(history),
+
+        "history":
+            history
     })
 
 
@@ -756,5 +1350,71 @@ def prediction_history():
 # --------------------------------------------------
 
 if __name__ == "__main__":
+
     init_database()
-    app.run(debug=True)
+
+    app.run(
+        debug=True
+    )
+# --------------------------------------------------
+# PREDICTION HISTORY API
+# --------------------------------------------------
+
+@app.route("/prediction-history")
+def prediction_history():
+
+    connection = sqlite3.connect(
+        DATABASE_PATH
+    )
+
+    connection.row_factory = sqlite3.Row
+
+    cursor = connection.cursor()
+
+    cursor.execute("""
+        SELECT
+            id,
+            latitude,
+            longitude,
+            flood_risk,
+            confidence,
+            rainfall_24h,
+            rainfall_72h,
+            temperature,
+            humidity,
+            created_at
+        FROM prediction_history
+        ORDER BY id DESC
+        LIMIT 20
+    """)
+
+    rows = cursor.fetchall()
+
+    connection.close()
+
+    history = [
+        dict(row)
+        for row in rows
+    ]
+
+    return jsonify({
+
+        "count":
+            len(history),
+
+        "history":
+            history
+    })
+
+
+# --------------------------------------------------
+# RUN APPLICATION
+# --------------------------------------------------
+
+if __name__ == "__main__":
+
+    init_database()
+
+    app.run(
+        debug=True
+    )
