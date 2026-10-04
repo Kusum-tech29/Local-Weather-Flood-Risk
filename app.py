@@ -2,6 +2,7 @@ from flask import Flask, jsonify, request
 from flask_cors import CORS
 from dotenv import load_dotenv
 import requests
+import time
 import os
 import sqlite3
 import joblib
@@ -9,6 +10,8 @@ import pandas as pd
 from math import radians, sin, cos, asin, sqrt
 
 load_dotenv()
+
+weather_cache = {}
 
 app = Flask(__name__)
 CORS(app)
@@ -91,8 +94,7 @@ def search_location():
             timeout=10
         )
 
-        response.raise_for_status()
-
+        response.raise_for_status()   
         data = response.json()
         results = data.get("results", [])
 
@@ -317,7 +319,18 @@ def get_nearby_water_feature(latitude, longitude):
 # --------------------------------------------------
 
 def get_weather_data(latitude, longitude):
+    cache_key = (
+        round(latitude, 2),
+        round(longitude, 2)
+    )
 
+    cached_data = weather_cache.get(cache_key)
+
+    if cached_data:
+        cached_time, weather_data = cached_data
+
+        if time.time() - cached_time < 600:
+            return weather_data
     if not WEATHER_API_URL:
         raise ValueError(
             "Weather API URL is not configured"
@@ -354,7 +367,14 @@ def get_weather_data(latitude, longitude):
 
     response.raise_for_status()
 
-    return response.json()
+    weather_data = response.json()
+
+    weather_cache[cache_key] = (
+    time.time(),
+    weather_data
+)
+
+    return weather_data
 
 
 # --------------------------------------------------
