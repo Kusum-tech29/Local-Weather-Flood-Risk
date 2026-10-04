@@ -17,7 +17,7 @@ CORS(app)
 # CONFIGURATION
 # --------------------------------------------------
 
-WEATHER_API_URL = os.getenv("WEATHER_API_URL")
+WEATHER_API_URL = "https://api.open-meteo.com/v1/forecast"
 DATABASE_PATH = "flood_risk_history.db"
 MODEL_PATH = os.path.join("models", "flood_risk_model.joblib")
 
