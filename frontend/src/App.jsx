@@ -543,7 +543,7 @@ const downloadRiskReport = () => {
 
   try {
     const response = await fetch(
-      `http://127.0.0.1:5000/search-location?city=${encodeURIComponent(
+      `https://local-weather-flood-risk.onrender.com/search-location?city=${encodeURIComponent(
         city.trim()
       )}`
     );
@@ -614,7 +614,7 @@ const downloadRiskReport = () => {
   const getPredictionHistory = async () => {
     try {
       const response = await fetch(
-        "http://127.0.0.1:5000/prediction-history"
+        "https://local-weather-flood-risk.onrender.com/prediction-history"
       );
 
       if (!response.ok) {
@@ -686,7 +686,7 @@ setTestMode(false);
 
     try {
       const response = await fetch(
-        "http://127.0.0.1:5000/flood-risk",
+        "https://local-weather-flood-risk.onrender.com/flood-risk",
         {
           method: "POST",
           headers: {
@@ -720,7 +720,7 @@ setTestMode(false);
       // --------------------------------------------------
 
       const forecastResponse = await fetch(
-        `http://127.0.0.1:5000/test-weather?lat=${lat}&lon=${lon}`
+        `https://local-weather-flood-risk.onrender.com/test-weather?lat=${lat}&lon=${lon}`
       );
 
       if (!forecastResponse.ok) {
@@ -767,7 +767,7 @@ setTestMode(false);
 
   try {
     const response = await fetch(
-      "http://127.0.0.1:5000/test-flood-risk",
+      "https://local-weather-flood-risk.onrender.com/test-flood-risk",
       {
         method: "POST",
         headers: {
