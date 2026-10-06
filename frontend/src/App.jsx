@@ -270,37 +270,58 @@ const downloadRiskReport = () => {
   doc.setFontSize(10);
   doc.setFont("helvetica", "normal");
 
-  doc.text(
-    `Temperature: ${
-      weatherData.weather?.temperature_c ?? "--"
-    } °C`,
-    20,
-    y
-  );
+ const reportTemperature =
+  testMode && testPrediction
+    ? testPrediction.test_features?.temperature
+    : weatherData.weather_conditions?.current_temperature_c;
 
-  y += 6;
+const reportHumidity =
+  testMode && testPrediction
+    ? testPrediction.test_features?.humidity
+    : weatherData.weather_conditions?.current_humidity_percent;
 
-  doc.text(
-    `Humidity: ${
-      weatherData.weather?.humidity_percent ?? "--"
-    } %`,
-    20,
-    y
-  );
+const reportCurrentRain =
+  testMode && testPrediction
+    ? testPrediction.test_features?.current_rain
+    : weatherData.weather_conditions?.current_rain_mm;
 
-  y += 6;
+doc.text(
+  `Temperature: ${reportTemperature ?? "--"} °C`,
+  20,
+  y
+);
 
-  doc.text(
-    `Current Rain: ${
-      weatherData.weather?.current_rain_mm ?? "--"
-    } mm`,
-    20,
-    y
-  );
+y += 6;
 
+doc.text(
+  `Humidity: ${reportHumidity ?? "--"} %`,
+  20,
+  y
+);
+
+y += 6;
+
+doc.text(
+  `Current Rain: ${reportCurrentRain ?? "--"} mm`,
+  20,
+  y
+);
   y += 12;
+const reportRainfall24 =
+  testMode && testPrediction
+    ? testPrediction.test_features?.rainfall_24h
+    : weatherData.rainfall_analysis?.next_24_hours_mm;
 
-  // --------------------------------------------------
+const reportRainfall72 =
+  testMode && testPrediction
+    ? testPrediction.test_features?.rainfall_72h
+    : weatherData.rainfall_analysis?.next_72_hours_mm;
+
+const reportPeakHourlyRain =
+  testMode && testPrediction
+    ? testPrediction.test_features?.max_hourly_rain
+    : weatherData.rainfall_analysis?.maximum_hourly_rain_mm;
+    // --------------------------------------------------
   // RAINFALL ANALYSIS
   // --------------------------------------------------
 
@@ -319,10 +340,9 @@ const downloadRiskReport = () => {
   doc.setFont("helvetica", "normal");
 
   doc.text(
-    `Next 24 Hours: ${
-      weatherData.rainfall_analysis
-        ?.next_24_hours_mm ?? "--"
-    } mm`,
+  `Next 24 Hours: ${
+  reportRainfall24 ?? "--"
+ } mm`,  
     20,
     y
   );
@@ -331,8 +351,7 @@ const downloadRiskReport = () => {
 
   doc.text(
     `Next 72 Hours: ${
-      weatherData.rainfall_analysis
-        ?.next_72_hours_mm ?? "--"
+  reportRainfall72 ?? "--"
     } mm`,
     20,
     y
@@ -341,9 +360,8 @@ const downloadRiskReport = () => {
   y += 6;
 
   doc.text(
-    `Peak Hourly Rainfall: ${
-      weatherData.rainfall_analysis
-        ?.peak_hourly_rain_mm ?? "--"
+   `Peak Hourly Rainfall: ${
+  reportPeakHourlyRain ?? "--" 
     } mm`,
     20,
     y
@@ -423,14 +441,18 @@ const downloadRiskReport = () => {
   doc.setFont("helvetica", "normal");
 
   const explanation =
-    weatherData.risk_explanation ||
-    "AI risk explanation unavailable.";
+  testMode && testPrediction
+    ? testPrediction.risk_explanation
+    : weatherData.risk_explanation;
 
+const finalExplanation =
+  explanation ||
+  "AI risk explanation unavailable.";
   const explanationLines =
-    doc.splitTextToSize(
-      explanation,
-      170
-    );
+  doc.splitTextToSize(
+    finalExplanation,
+    170
+  );
 
   doc.text(
     explanationLines,
@@ -779,7 +801,7 @@ setTestMode(false);
       }
     );
 
-    const data = await response.json();
+const data = await response.json();
 
     if (!response.ok) {
       throw new Error(
@@ -790,8 +812,13 @@ setTestMode(false);
 
     const testResult = {
   ...data.prediction,
+
+  test_features:
+    data.test_features || {},
+
   risk_factors:
     data.risk_factors || [],
+
   risk_explanation:
     data.risk_explanation || "",
 };
