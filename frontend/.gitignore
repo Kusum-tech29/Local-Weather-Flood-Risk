@@ -22,3 +22,27 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+# Backup files
+*.bak
+*.backup
+app_backup*.py
+app_before_*.py
+app_search_fix_backup.py
+app_search_fix*.py
+frontend/src/*.backup
+frontend/src/App_backup*.jsx
+frontend/src/App_before_*.jsx
+
+# Local archives and test files
+IN.zip
+*_test.py
+placedb_test.py
+evaluate_model.py
+repair_*.py
+add_admin_maps.py
+add_geonames_config.py
+geonames_admin1.txt
+geonames_admin2.txt
+geonames_india/
+data/*backup*.csv
+models/*before*.joblib

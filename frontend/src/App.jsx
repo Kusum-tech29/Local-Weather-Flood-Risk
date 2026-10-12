@@ -1,7 +1,12 @@
-import jsPDF from "jspdf";
+﻿import jsPDF from "jspdf";
 import { useState } from "react";
 import {
   AlertTriangle,
+  FlaskConical,
+  Download,
+  BrainCircuit,
+  Cloud,
+  Smartphone,
   CloudRain,
   Droplets,
   LoaderCircle,
@@ -25,7 +30,7 @@ Scatter,
 ScatterChart,
 Tooltip,
 XAxis,
-YAxis, 
+YAxis,
 } from "recharts";
 
 import {
@@ -54,6 +59,9 @@ const DefaultIcon = L.icon({
 
 L.Marker.prototype.options.icon = DefaultIcon;
 
+const API_BASE_URL =
+  import.meta.env.VITE_API_BASE_URL ||
+  "http://127.0.0.1:5000";
 // --------------------------------------------------
 // MAP UPDATER
 // --------------------------------------------------
@@ -356,7 +364,7 @@ const reportPeakHourlyRain =
   doc.text(
   `Next 24 Hours: ${
   reportRainfall24 ?? "--"
- } mm`,  
+ } mm`,
     20,
     y
   );
@@ -375,7 +383,7 @@ const reportPeakHourlyRain =
 
   doc.text(
    `Peak Hourly Rainfall: ${
-  reportPeakHourlyRain ?? "--" 
+  reportPeakHourlyRain ?? "--"
     } mm`,
     20,
     y
@@ -411,7 +419,7 @@ const reportPeakHourlyRain =
 
       const lines =
         doc.splitTextToSize(
-          `• ${factor}`,
+          `- ${factor}`,
           170
         );
 
@@ -550,10 +558,7 @@ const finalExplanation =
     "AI_Flood_Risk_Assessment_Report.pdf"
   );
 };
- // --------------------------------------------------
-  // CITY / LOCATION SEARCH
-  // --------------------------------------------------
-  const searchCity = async () => {
+const searchCity = async () => {
   if (!city.trim()) {
     setError("Please enter a city or location name.");
     return;
@@ -578,9 +583,11 @@ const finalExplanation =
   setLongitude("");
 
   try {
+    const query = city.trim();
+
     const response = await fetch(
-      `https://local-weather-flood-risk.onrender.com/search-location?city=${encodeURIComponent(
-        city.trim()
+      `${API_BASE_URL}/search-place?name=${encodeURIComponent(
+        query
       )}`
     );
 
@@ -592,26 +599,186 @@ const finalExplanation =
       );
     }
 
-    const results = data.results || [];
+    let results = data.results || [];
+
+    // --------------------------------------------------
+    // CONTEXT-AWARE RESULT FILTERING
+    // --------------------------------------------------
+
+    const queryParts = query
+      .toLowerCase()
+      .split(",")
+      .map((part) => part.trim())
+      .filter(Boolean);
+
+    const normalize = (value) =>
+      String(value || "")
+        .toLowerCase()
+        .replace(/\bdistrict\b/g, "")
+        .replace(/\bdist\b/g, "")
+        .replace(/\bstate of\b/g, "")
+        .replace(/\bup\b/g, "uttar pradesh")
+        .replace(/\s+/g, " ")
+        .trim();
+
+    // First part = main place name
+    const mainPlace = normalize(queryParts[0]);
+
+    // Remaining parts = location context
+    const contextParts = queryParts.slice(1);
+
+    // Score every result
+    results = results
+      .map((place) => {
+        let score = 0;
+
+        const placeName = normalize(place.name);
+        const country = normalize(place.country);
+        const state = normalize(place.state);
+        const district = normalize(place.district);
+        const cityName = normalize(place.city);
+
+        // Exact place-name match
+        if (placeName === mainPlace) {
+          score += 100;
+        } else if (
+          placeName.includes(mainPlace) ||
+          mainPlace.includes(placeName)
+        ) {
+          score += 50;
+        }
+
+        // Match context
+        contextParts.forEach((context) => {
+          const ctx = normalize(context);
+
+          if (country === ctx) {
+            score += 100;
+          }
+
+          if (state === ctx) {
+            score += 100;
+          }
+
+          if (district === ctx) {
+            score += 150;
+          }
+
+          if (cityName === ctx) {
+            score += 150;
+          }
+
+          if (district.includes(ctx) || ctx.includes(district)) {
+            score += 80;
+          }
+
+          if (cityName.includes(ctx) || ctx.includes(cityName)) {
+            score += 80;
+          }
+        });
+
+        return {
+          ...place,
+          _score: score,
+        };
+      })
+      .sort((a, b) => b._score - a._score);
+
+    // --------------------------------------------------
+    // SHOW ONLY THE MOST RELEVANT RESULTS
+    // --------------------------------------------------
+
+    if (contextParts.length > 0 && results.length > 0) {
+      const bestScore = results[0]._score;
+
+      results = results.filter(
+        (place) => place._score >= bestScore - 80
+      );
+    }
+    // Remove internal score
+    results = results.map((place) => {
+      const cleanPlace = { ...place };
+      delete cleanPlace._score;
+      return cleanPlace;
+    });
+
+    // Maximum 10 relevant results
+    results = results.slice(0, 10);
 
     setLocationResults(results);
 
     if (results.length === 0) {
       setError(
-        `No matching location found for "${city.trim()}".`
+        `No matching location found for "${query}".`
       );
     }
   } catch (err) {
     console.error(err);
 
     setError(
-      err.message ||
-        "Location search failed. Make sure the Flask backend is running."
+      err instanceof TypeError ? "Backend connection failed. Make sure the Flask server is running." : err.message || "Location search failed. Please try again."
     );
   } finally {
     setSearchingLocation(false);
   }
 };
+// --------------------------------------------------
+// VOICE FLOOD WARNING
+// --------------------------------------------------
+
+// --------------------------------------------------
+// VOICE FLOOD WARNING - HINDI + ENGLISH
+// --------------------------------------------------
+
+const speakFloodWarning = () => {
+  if (!risk || !("speechSynthesis" in window)) {
+    return;
+  }
+
+  let englishMessage = "";
+  let hindiMessage = "";
+
+  if (risk === "HIGH") {
+    englishMessage =
+      "Warning! High flood risk detected. Avoid low-lying and flood-prone areas. Follow official local warnings.";
+    hindiMessage =
+      "चेतावनी! बाढ़ का खतरा बहुत अधिक है। निचले और बाढ़ प्रभावित क्षेत्रों से दूर रहें। स्थानीय प्रशासन की चेतावनियों का पालन करें।";
+  } else if (risk === "MEDIUM") {
+    englishMessage =
+      "Warning! Moderate flood risk detected. Stay alert and monitor rainfall and weather conditions.";
+    hindiMessage =
+      "चेतावनी! बाढ़ का खतरा मध्यम है। सतर्क रहें और बारिश तथा मौसम की स्थिति पर नज़र रखें।";
+  } else if (risk === "LOW") {
+    englishMessage =
+      "Low flood risk detected. No immediate major rainfall-related threat is indicated. Continue monitoring weather updates.";
+    hindiMessage =
+      "बाढ़ का खतरा कम है। फिलहाल भारी बारिश से संबंधित किसी बड़े खतरे का संकेत नहीं है। मौसम की जानकारी देखते रहें।";
+  } else {
+    englishMessage =
+      "Flood risk information is currently unavailable.";
+    hindiMessage =
+      "बाढ़ के खतरे की जानकारी फिलहाल उपलब्ध नहीं है।";
+  }
+
+  window.speechSynthesis.cancel();
+
+  const speak = (message, language) =>
+    new Promise((resolve) => {
+      const speech = new SpeechSynthesisUtterance(message);
+      speech.lang = language;
+      speech.rate = 0.9;
+      speech.pitch = 1;
+      speech.volume = 1;
+      speech.onend = resolve;
+      speech.onerror = resolve;
+      window.speechSynthesis.speak(speech);
+    });
+
+  speak(englishMessage, "en-IN").then(() =>
+    speak(hindiMessage, "hi-IN")
+  );
+};
+
 
 
   // --------------------------------------------------
@@ -623,13 +790,18 @@ const finalExplanation =
     setLongitude(String(place.longitude));
 
     const locationName = [
-      place.name,
-      place.district,
-      place.state,
-      place.country,
-    ]
-      .filter(Boolean)
-      .join(", ");
+     place.name,
+     place.district,
+     place.state,
+     place.country,
+   ]
+     .filter(Boolean)
+     .filter((value, index, array) =>
+      array.findIndex(
+        item => item.toLowerCase() === value.toLowerCase()
+      ) === index
+    )
+    .join(", ");
 
     setSelectedLocation(locationName);
     setCity(place.name || "");
@@ -650,7 +822,7 @@ const finalExplanation =
   const getPredictionHistory = async () => {
     try {
       const response = await fetch(
-        "https://local-weather-flood-risk.onrender.com/prediction-history"
+        `${API_BASE_URL}/prediction-history`
       );
 
       if (!response.ok) {
@@ -722,7 +894,7 @@ setTestMode(false);
 
     try {
       const response = await fetch(
-        "https://local-weather-flood-risk.onrender.com/flood-risk",
+       `${API_BASE_URL}/flood-risk`,
         {
           method: "POST",
           headers: {
@@ -756,7 +928,7 @@ setTestMode(false);
       // --------------------------------------------------
 
       const forecastResponse = await fetch(
-        `https://local-weather-flood-risk.onrender.com/test-weather?lat=${lat}&lon=${lon}`
+        `${API_BASE_URL}/test-weather?lat=${lat}&lon=${lon}`
       );
 
       if (!forecastResponse.ok) {
@@ -803,7 +975,7 @@ setTestMode(false);
 
   try {
     const response = await fetch(
-      "https://local-weather-flood-risk.onrender.com/test-flood-risk",
+      `${API_BASE_URL}/test-flood-risk`,
       {
         method: "POST",
         headers: {
@@ -848,94 +1020,97 @@ generateEarlyWarning(testResult);
     );
   }
 };
+
   // --------------------------------------------------
   // DAILY FORECAST
   // --------------------------------------------------
 
-  const getDailyForecast = () => {
-    if (!forecastData?.forecast) {
-      return [];
-    }
+   const getDailyForecast = () => {
+     if (!forecastData?.forecast) {
+       return [];
+     }
 
-    const {
-      time,
-      temperature,
-      precipitation,
-      humidity,
-    } = forecastData.forecast;
+     const {
+       time,
+       temperature,
+       precipitation,
+       humidity,
+     } = forecastData.forecast;
 
-    if (
-      !time ||
-      !temperature ||
-      !precipitation ||
-      !humidity
-    ) {
-      return [];
-    }
+     if (!time || !temperature || !precipitation || !humidity) {
+       return [];
+     }
 
-    const dailyData = {};
+     const now = new Date();
 
-    time.forEach((dateTime, index) => {
-      const date =
-        dateTime.split("T")[0];
+     const pad = (value) =>
+       String(value).padStart(2, "0");
 
-      if (!dailyData[date]) {
-        dailyData[date] = {
-          date,
-          temperatures: [],
-          precipitation: [],
-          humidity: [],
-        };
-      }
+     const todayDate =
+       `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
 
-      dailyData[date].temperatures.push(
-        temperature[index]
-      );
+     const currentDateTime =
+       `${todayDate}T${pad(now.getHours())}:${pad(now.getMinutes())}`;
 
-      dailyData[date].precipitation.push(
-        precipitation[index]
-      );
+     const dailyData = {};
 
-      dailyData[date].humidity.push(
-        humidity[index]
-      );
-    });
+     time.forEach((dateTime, index) => {
+       const date = dateTime.split("T")[0];
 
-    return Object.values(dailyData)
-      .slice(0, 3)
-      .map((day) => ({
-        date: day.date,
+       if (date < todayDate) {
+         return;
+       }
 
-        maxTemp: Math.max(
-          ...day.temperatures
-        ).toFixed(1),
+       if (!dailyData[date]) {
+         dailyData[date] = {
+           date,
+           temperatures: [],
+           futurePrecipitation: [],
+           humidity: [],
+         };
+       }
 
-        minTemp: Math.min(
-          ...day.temperatures
-        ).toFixed(1),
+       dailyData[date].temperatures.push(temperature[index]);
+       dailyData[date].humidity.push(humidity[index]);
 
-        rainfall: day.precipitation
-          .reduce(
-            (sum, value) =>
-              sum + (value || 0),
-            0
-          )
-          .toFixed(1),
+       if (dateTime > currentDateTime) {
+         dailyData[date].futurePrecipitation.push(
+           precipitation[index]
+         );
+       }
+     });
 
-        humidity: Math.round(
-          day.humidity.reduce(
-            (sum, value) =>
-              sum + (value || 0),
-            0
-          ) / day.humidity.length
-        ),
-      }));
-  };
+     return Object.values(dailyData)
+       .slice(0, 3)
+       .map((day) => ({
+         date: day.date,
+
+         maxTemp: Math.max(
+           ...day.temperatures
+         ).toFixed(1),
+
+         minTemp: Math.min(
+           ...day.temperatures
+         ).toFixed(1),
+
+         rainfall: day.futurePrecipitation
+           .reduce(
+             (sum, value) => sum + (value || 0),
+             0
+           )
+           .toFixed(1),
+
+         humidity: Math.round(
+           day.humidity.reduce(
+             (sum, value) => sum + (value || 0),
+             0
+           ) / day.humidity.length
+         ),
+       }));
+   };
 
 
-  const dailyForecast =
-    getDailyForecast();
-
+  const dailyForecast = getDailyForecast();
 
   // --------------------------------------------------
   // DISPLAY PREDICTION
@@ -1002,7 +1177,29 @@ generateEarlyWarning(testResult);
       : risk === "LOW"
       ? "risk-low"
       : "risk-unknown";
+// --------------------------------------------------
+// AUTOMATIC EARLY WARNING
+// --------------------------------------------------
 
+const earlyWarningMessage =
+  risk === "HIGH"
+    ? `High flood risk detected for ${
+        selectedLocation || "the selected location"
+      }. Immediate caution is recommended. Avoid low-lying and flood-prone areas and follow official local warnings.`
+
+    : risk === "MEDIUM"
+    ? `Moderate flood risk detected for ${
+        selectedLocation || "the selected location"
+      }. Stay alert, monitor rainfall and weather conditions, and avoid unnecessary travel through low-lying areas.`
+
+    : risk === "LOW"
+    ? `Low flood risk detected for ${
+        selectedLocation || "the selected location"
+      }. No immediate major rainfall-related threat is indicated. Continue monitoring weather updates.`
+
+    : `Flood risk information is currently unavailable for ${
+        selectedLocation || "the selected location"
+      }.`;
 
   // --------------------------------------------------
   // JSX
@@ -1091,10 +1288,10 @@ generateEarlyWarning(testResult);
 
         {testMode && testPrediction && (
           <div className="test-mode-banner">
-            🧪 AI Test Mode Active
+            <FlaskConical size={16} aria-hidden="true" />{" "}AI Test Mode Active
             {testPrediction
-              ? ` — Simulated ${testPrediction.flood_risk} Risk Scenario`
-              : " — Select LOW, MEDIUM or HIGH"}
+              ? ` - Simulated ${testPrediction.flood_risk} Risk Scenario`
+              : " - Select LOW, MEDIUM or HIGH"}
           </div>
         )}
 
@@ -1369,7 +1566,7 @@ generateEarlyWarning(testResult);
 }
               }}
             >
-              🧪{" "}
+              <FlaskConical size={16} aria-hidden="true" />{" "}
               {testMode
                 ? "Exit AI Test Mode"
                 : "AI Test Mode"}
@@ -1380,7 +1577,7 @@ generateEarlyWarning(testResult);
   onClick={downloadRiskReport}
   disabled={!weatherData}
 >
-  📥 Download AI Report
+  <Download size={16} aria-hidden="true" />{" "}Download AI Report
 </button>
 
             {/* --------------------------------------------------
@@ -1817,7 +2014,7 @@ generateEarlyWarning(testResult);
                   <div className="confidence-row">
 
                     <span>
-                      Model confidence
+                      Model class confidence
                     </span>
 
                     <strong>
@@ -1854,7 +2051,7 @@ generateEarlyWarning(testResult);
                   <div className="risk-score-header">
 
                     <span>
-                      AI Risk Score
+                      Rainfall-Based Risk Index
                     </span>
 
                     <strong>
@@ -1877,38 +2074,37 @@ generateEarlyWarning(testResult);
 
 
                   <p className="risk-score-note">
-                    Score is calculated from
-                    the AI model's predicted
-                    risk probabilities.
+                    This is a rainfall-based model index, not the probability that flooding will occur.
                   </p>
 
 
-                  <p
-                    className={`risk-score-status ${riskClass}`}
-                  >
+   <p
+  className={`risk-score-status ${riskClass}`}
+>
+  {risk === "LOW"
+    ? "Low Risk - Current conditions indicate relatively low rainfall-based flood risk."
 
-                    {aiRiskScore <= 30
-                      ? "Low Risk — Current conditions indicate relatively low rainfall-based flood risk."
+    : risk === "MEDIUM"
+    ? "Moderate Risk - Weather conditions require continued monitoring."
 
-                      : aiRiskScore <= 60
-                      ? "Moderate Risk — Weather conditions require continued monitoring."
+    : risk === "HIGH"
+    ? "High Risk - Current weather conditions indicate elevated rainfall-based flood risk."
 
-                      : "High Risk — Current weather conditions indicate elevated rainfall-based flood risk."}
+    : "Flood risk information is currently unavailable."}
+</p>
 
-                  </p>
-
-                </div>
+</div>
 
 
-                {/* MODEL NAME */}
+{/* MODEL NAME */}
 
-                <p className="model-name">
+<p className="model-name">
 
-                  Model:{" "}
-                  {displayPrediction?.model ||
-                    "Random Forest"}
+  Model:{" "}
+  {displayPrediction?.model ||
+    "Random Forest"}
 
-                </p>
+</p>
 
 
                 {/* RISK PROBABILITY */}
@@ -1916,7 +2112,7 @@ generateEarlyWarning(testResult);
                 <div className="probability-breakdown">
 
                   <p className="probability-title">
-                    Risk Probability
+                    Model Class Scores
                   </p>
 
 
@@ -2050,16 +2246,27 @@ generateEarlyWarning(testResult);
                     </h3>
 
                     <p>
-                      Forecast rainfall accumulation
+                      Rainfall Analysis: Past & Forecast
                     </p>
 
                   </div>
-
                 </div>
 
 
                 <div className="rainfall-stats">
+                <div>
+                  <span>Past 24 Hours</span>
+                  <strong>
+                    {weatherData.rainfall_analysis?.past_24_hours_mm ?? "--"} mm
+                  </strong>
+                </div>
 
+               <div>
+                <span>Past 72 Hours</span>
+                <strong>
+                  {weatherData.rainfall_analysis?.past_72_hours_mm ?? "--"} mm
+                </strong>
+              </div>
                   <div>
 
                     <span>
@@ -2195,107 +2402,104 @@ generateEarlyWarning(testResult);
             )}
 
 
-            {/* --------------------------------------------------
-                RAINFALL CHART
-            -------------------------------------------------- */}
+{/* RAINFALL CHART */}
 
-            {dailyForecast.length > 0 && (
-              <section className="rainfall-chart-section">
+{dailyForecast.length > 0 && (
+  <section className="rainfall-chart-section">
+    <div className="section-title">
+      <div>
+        <h3>3-Day Rainfall Forecast</h3>
+        <p>Expected daily rainfall for the selected location.</p>
+      </div>
+    </div>
 
-                <h3>
-                  3-Day Rainfall Forecast
-                </h3>
+    <div
+      style={{
+        width: "100%",
+        height: 320,
+        marginTop: 12,
+      }}
+    >
+      <ResponsiveContainer width="100%" height="100%">
+        <BarChart
+          data={dailyForecast}
+          margin={{
+            top: 20,
+            right: 16,
+            left: 8,
+            bottom: 8,
+          }}
+        >
+          <CartesianGrid
+            strokeDasharray="3 3"
+            vertical={false}
+            stroke="#dbe4f0"
+          />
 
+          <XAxis
+            dataKey="date"
+            tickFormatter={(date) =>
+              new Date(`${date}T00:00:00`).toLocaleDateString(
+                "en-US",
+                { weekday: "short" }
+              )
+            }
+            tick={{ fill: "#475569", fontSize: 13 }}
+            axisLine={false}
+            tickLine={false}
+          />
 
-                <div
-                  style={{
-                    width: "100%",
-                    height: 300,
-                  }}
-                >
+          <YAxis
+            tickFormatter={(value) => `${value}`}
+            tick={{ fill: "#475569", fontSize: 12 }}
+            axisLine={false}
+            tickLine={false}
+            width={42}
+            allowDecimals
+            domain={[0, "auto"]}
+            label={{
+              value: "Rainfall (mm)",
+              angle: -90,
+              position: "insideLeft",
+              style: { fill: "#475569", fontSize: 12 },
+            }}
+          />
 
-                  <ResponsiveContainer
-                    width="100%"
-                    height="100%"
-                  >
+          <Tooltip
+            formatter={(value) => [
+              `${Number(value).toFixed(1)} mm`,
+              "Expected Rainfall",
+            ]}
+            labelFormatter={(date) =>
+              new Date(`${date}T00:00:00`).toLocaleDateString(
+                "en-US",
+                {
+                  weekday: "long",
+                  month: "short",
+                  day: "numeric",
+                  year: "numeric",
+                }
+              )
+            }
+            contentStyle={{
+              borderRadius: 12,
+              border: "1px solid #dbe4f0",
+              boxShadow: "0 4px 16px rgba(15, 23, 42, 0.10)",
+            }}
+          />
 
-                    <BarChart
-                      data={dailyForecast}
-                      margin={{
-                        top: 10,
-                        right: 10,
-                        left: 5,
-                        bottom: 5,
-                      }}
-                    >
-
-                      <CartesianGrid
-                        strokeDasharray="3 3"
-                      />
-
-
-                      <XAxis
-                        dataKey="date"
-                        tickFormatter={(date) =>
-                          new Date(
-                            `${date}T00:00:00`
-                          ).toLocaleDateString(
-                            "en-US",
-                            {
-                              weekday: "short",
-                            }
-                          )
-                        }
-                      />
-
-
-                      <YAxis
-                        tickFormatter={(value) =>
-                          `${value} mm`
-                        }
-                      />
-
-
-                      <Tooltip
-                        formatter={(value) => [
-                          `${value} mm`,
-                          "Rainfall",
-                        ]}
-                        labelFormatter={(date) =>
-                          new Date(
-                            `${date}T00:00:00`
-                          ).toLocaleDateString(
-                            "en-US",
-                            {
-                              weekday:
-                                "long",
-                              month: "short",
-                              day: "numeric",
-                            }
-                          )
-                        }
-                      />
-
-
-                      <Bar
-                        dataKey="rainfall"
-                        fill="#0f6fff"
-                        radius={[
-                          8,
-                          8,
-                          0,
-                          0,
-                        ]}
-                      />
-
-                    </BarChart>
-
-                  </ResponsiveContainer>
-
-                </div>
-
-              </section>
-            )}
+          <Bar
+            dataKey="rainfall"
+            name="Rainfall"
+            fill="#0f6fff"
+            maxBarSize={64}
+            radius={[8, 8, 0, 0]}
+          />
+        </BarChart>
+      </ResponsiveContainer>
+    </div>
+  </section>
+)}
 
 
             {/* --------------------------------------------------
@@ -2440,13 +2644,13 @@ generateEarlyWarning(testResult);
   >
 
     <div className="early-warning-icon">
-
-      {earlyWarning.level === "HIGH"
-        ? "🚨"
-        : earlyWarning.level === "MEDIUM"
-        ? "⚠️"
-        : "🟢"}
-
+      {earlyWarning.level === "HIGH" ? (
+        <ShieldAlert aria-label="High risk" size={28} />
+      ) : earlyWarning.level === "MEDIUM" ? (
+        <AlertTriangle aria-label="Medium risk" size={28} />
+      ) : (
+        <Cloud aria-label="Low risk" size={28} />
+      )}
     </div>
 
     <div className="early-warning-content">
@@ -2471,22 +2675,22 @@ generateEarlyWarning(testResult);
 
           <ul>
             <li>
-              🚨 Avoid unnecessary travel through
+              Avoid unnecessary travel through
               low-lying or waterlogged areas.
             </li>
 
             <li>
-              📢 Closely monitor official weather
+              Closely monitor official weather
               and local emergency updates.
             </li>
 
             <li>
-              🏠 Keep essential documents,
+              Keep essential documents,
               medicines and emergency supplies ready.
             </li>
 
             <li>
-              ⚡ Be prepared for rapid changes
+              Be prepared for rapid changes
               in rainfall conditions.
             </li>
           </ul>
@@ -2495,17 +2699,17 @@ generateEarlyWarning(testResult);
 
           <ul>
             <li>
-              ⚠️ Monitor rainfall and weather
+              Monitor rainfall and weather
               conditions regularly.
             </li>
-
             <li>
-              🌧️ Pay attention to low-lying areas
+              Pay attention to low-lying areas
               and local drainage conditions.
             </li>
 
+
             <li>
-              📱 Keep weather and emergency
+              Keep weather and emergency
               notifications enabled.
             </li>
           </ul>
@@ -2514,12 +2718,12 @@ generateEarlyWarning(testResult);
 
           <ul>
             <li>
-              🟢 Continue normal activities
+              Continue normal activities
               while monitoring weather updates.
             </li>
 
             <li>
-              🌦️ Check future rainfall forecasts
+              Check future rainfall forecasts
               for changing conditions.
             </li>
           </ul>
@@ -2540,7 +2744,7 @@ generateEarlyWarning(testResult);
               <section className="risk-explanation">
 
                 <h3>
-                  🤖 AI Risk Explanation
+                  AI Risk Explanation
                 </h3>
 
                 <p>
@@ -2645,40 +2849,49 @@ generateEarlyWarning(testResult);
                 FLOOD RISK ALERT
             -------------------------------------------------- */}
 
-            <section
-              className={`flood-alert flood-alert-${risk.toLowerCase()}`}
-            >
+<section
+  className={`flood-alert flood-alert-${risk.toLowerCase()}`}
+>
+  <AlertTriangle size={24} />
 
-              <AlertTriangle size={24} />
+  <div>
+    <h3>
+      {risk === "HIGH"
+        ? "[HIGH RISK] HIGH FLOOD RISK ALERT"
+        : risk === "MEDIUM"
+        ? "[MEDIUM RISK] MEDIUM FLOOD RISK ALERT"
+        : risk === "LOW"
+        ? "LOW FLOOD RISK"
+        : "FLOOD RISK ALERT"}
+    </h3>
 
-              <div>
+    <p>
+     {earlyWarningMessage}
+    </p>
+    <p className="risk-disclaimer">
+      This is a rainfall-based weather-risk estimate, not a verified flood-event prediction.
+      Model class confidence is not the probability that flooding will occur. Follow official local warnings.
+    </p>
+<button
+  type="button"
+  onClick={speakFloodWarning}
+  className="voice-warning-button"
+>
+  Listen to Warning
+</button>
+    {risk === "HIGH" && (
+      <strong>
+        Immediate precaution recommended.
+      </strong>
+    )}
 
-                <h3>
-                  Flood Risk Alert
-                </h3>
-
-                <p>
-
-                  {risk === "HIGH"
-
-                    ? "High flood risk detected. Avoid flood-prone areas and closely monitor official local warnings."
-
-                    : risk === "MEDIUM"
-
-                    ? "Moderate flood risk detected. Stay alert and continue monitoring rainfall and local conditions."
-
-                    : risk === "LOW"
-
-                    ? "Low flood risk detected for the selected location. Continue monitoring weather updates."
-
-                    : "Flood risk information is currently unavailable."}
-
-                </p>
-
-              </div>
-
-            </section>
-
+    {risk === "MEDIUM" && (
+      <strong>
+        Stay alert and monitor changing conditions.
+      </strong>
+    )}
+  </div>
+</section>
 {/* --------------------------------------------------
     PREDICTION HISTORY ANALYTICS
 -------------------------------------------------- */}
@@ -2793,7 +3006,7 @@ generateEarlyWarning(testResult);
             .slice()
             .reverse()
             .map((item, index) => ({
-              prediction: `#${index + 1}`,
+            prediction: `#${index + 1}`,
               confidence:
                 Number(item.confidence) || 0,
             }))
@@ -2804,9 +3017,17 @@ generateEarlyWarning(testResult);
             strokeDasharray="3 3"
           />
 
-          <XAxis
-            dataKey="prediction"
-          />
+
+<XAxis
+  dataKey="prediction"
+  interval={0}
+  angle={-45}
+  textAnchor="end"
+  height={60}
+/>
+
+
+
 
           <YAxis
             domain={[0, 100]}
@@ -2913,12 +3134,14 @@ generateEarlyWarning(testResult);
                       item.rainfall_24h
                     ) || 0,
 
-                  riskScore:
-                    risk === "HIGH"
-                      ? 100
-                      : risk === "MEDIUM"
-                      ? 50
-                      : 0,
+                 riskScore:
+                   risk === "HIGH"
+                     ? 100
+                     : risk === "MEDIUM"
+                     ? 50
+                     : risk === "LOW"
+                     ? 1
+                     : 0,
                 };
               }
             )}
@@ -3101,7 +3324,7 @@ generateEarlyWarning(testResult);
 
         <p>
           Local Weather & Flood Risk Prediction
-          System • AI-Assisted Weather Intelligence
+          System - AI-Assisted Weather Intelligence
         </p>
 
       </footer>

@@ -5,3 +5,30 @@ dist/
 __pycache__/
 *.pyc
 flood_risk_history.db
+
+# Backup files
+*.bak
+*.backup
+app_backup*.py
+app_before_*.py
+app_search_fix*.py
+frontend/src/App_backup*.jsx
+frontend/src/App_before_*.jsx
+data/*backup*.csv
+models/*before*.joblib
+
+# Local test and repair scripts
+evaluate_model.py
+nominatim_test.py
+overpass_test.py
+placedb_test.py
+evaluate_model.py
+repair_*.py
+add_admin_maps.py
+add_geonames_config.py
+
+# Local archives and GeoNames data
+IN.zip
+geonames_admin1.txt
+geonames_admin2.txt
+geonames_india/

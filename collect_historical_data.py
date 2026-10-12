@@ -1,8 +1,8 @@
+
 import requests
 import csv
 import os
-from datetime import datetime, timedelta
-
+from datetime import datetime
 
 API_URL = "https://archive-api.open-meteo.com/v1/archive"
 
@@ -21,91 +21,61 @@ def calculate_features(hourly_data):
     humidity = hourly_data["relative_humidity_2m"]
     temperature = hourly_data["temperature_2m"]
 
-    daily_data = {}
-
-    for i, time_value in enumerate(times):
-        date_value = time_value[:10]
-
-        if date_value not in daily_data:
-            daily_data[date_value] = {
-                "precipitation": [],
-                "humidity": [],
-                "temperature": []
-            }
-
-        daily_data[date_value]["precipitation"].append(
-            precipitation[i] or 0
-        )
-
-        daily_data[date_value]["humidity"].append(
-            humidity[i] or 0
-        )
-
-        daily_data[date_value]["temperature"].append(
-            temperature[i] or 0
-        )
-
     rows = []
 
-    sorted_dates = sorted(daily_data.keys())
-
-    for index, date_value in enumerate(sorted_dates):
-
-        if index < 3:
+    # Hourly observations; use rolling windows ending at each hour.
+    for i in range(len(times)):
+        if i < 71:
             continue
 
-        current_day = daily_data[date_value]
+        rainfall_24h_values = precipitation[i - 23:i + 1]
+        rainfall_72h_values = precipitation[i - 71:i + 1]
 
-        rainfall_24h = sum(current_day["precipitation"])
-
-        previous_dates = sorted_dates[index - 2:index + 1]
-
-        rainfall_72h = 0
-
-        for previous_date in previous_dates:
-            rainfall_72h += sum(
-                daily_data[previous_date]["precipitation"]
-            )
-
-        max_hourly_rain = max(
-            current_day["precipitation"]
+        rainfall_24h = sum(
+            value if value is not None else 0
+            for value in rainfall_24h_values
         )
 
-        avg_humidity = sum(
-            current_day["humidity"]
-        ) / len(current_day["humidity"])
+        rainfall_72h = sum(
+            value if value is not None else 0
+            for value in rainfall_72h_values
+        )
 
-        avg_temperature = sum(
-            current_day["temperature"]
-        ) / len(current_day["temperature"])
+        max_hourly_rain = max(
+            (value if value is not None else 0)
+            for value in rainfall_72h_values
+        )
 
-        current_rain = current_day["precipitation"][-1]
+        current_humidity = humidity[i]
+        current_temperature = temperature[i]
+        current_rain = precipitation[i] if precipitation[i] is not None else 0
 
-        # Preliminary label generation.
-        # This is NOT a scientifically validated flood label.
+        # Preliminary rainfall-based proxy labels, not verified flood events.
         if (
-            rainfall_24h >= 100
-            or rainfall_72h >= 200
-            or max_hourly_rain >= 50
+            rainfall_24h >= 35
+            or rainfall_72h >= 89
+            or max_hourly_rain >= 12
         ):
             flood_risk = "HIGH"
-
         elif (
-            rainfall_24h >= 50
-            or rainfall_72h >= 100
-            or max_hourly_rain >= 30
+            rainfall_24h >= 16
+            or rainfall_72h >= 42
+            or max_hourly_rain >= 6
         ):
             flood_risk = "MEDIUM"
-
         else:
             flood_risk = "LOW"
 
+        if current_humidity is None or current_temperature is None:
+            continue
+
         rows.append([
+            times[i],
             round(rainfall_24h, 2),
             round(rainfall_72h, 2),
             round(max_hourly_rain, 2),
-            round(avg_humidity, 2),
-            round(avg_temperature, 2),
+            round(current_humidity, 2),
+            round(current_temperature, 2),
             round(current_rain, 2),
             flood_risk
         ])
@@ -114,8 +84,7 @@ def calculate_features(hourly_data):
 
 
 def main():
-
-    print("Downloading historical weather data...")
+    print("Downloading historical hourly weather data...")
     print(f"Location: {LATITUDE}, {LONGITUDE}")
     print(f"Period: {START_DATE} to {END_DATE}")
 
@@ -133,30 +102,22 @@ def main():
     }
 
     try:
-        response = requests.get(
-            API_URL,
-            params=params,
-            timeout=60
-        )
-
+        response = requests.get(API_URL, params=params, timeout=120)
         response.raise_for_status()
 
         data = response.json()
-
         rows = calculate_features(data["hourly"])
+
+        if not rows:
+            print("No valid hourly records were generated.")
+            return
 
         os.makedirs("data", exist_ok=True)
 
-        with open(
-            OUTPUT_FILE,
-            "w",
-            newline="",
-            encoding="utf-8"
-        ) as file:
-
+        with open(OUTPUT_FILE, "w", newline="", encoding="utf-8") as file:
             writer = csv.writer(file)
-
             writer.writerow([
+                "time",
                 "rainfall_24h",
                 "rainfall_72h",
                 "max_hourly_rain",
@@ -165,25 +126,23 @@ def main():
                 "current_rain",
                 "flood_risk"
             ])
-
             writer.writerows(rows)
 
         print()
-        print("Historical dataset created successfully!")
+        print("Historical hourly dataset created successfully!")
         print(f"Rows generated: {len(rows)}")
         print(f"File: {OUTPUT_FILE}")
+        print("Note: flood_risk contains rainfall-based proxy labels.")
 
     except requests.exceptions.RequestException as error:
-
         print()
         print("Failed to download historical data.")
         print("Error:", error)
 
-    except KeyError as error:
-
+    except (KeyError, TypeError, ValueError) as error:
         print()
-        print("Unexpected API response.")
-        print("Missing field:", error)
+        print("Unexpected or incomplete API response.")
+        print("Error:", error)
 
 
 if __name__ == "__main__":
