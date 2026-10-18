@@ -1,9 +1,7 @@
-﻿import jsPDF from "jspdf";
-import { useState } from "react";
+﻿import { useState } from "react";
 import {
   AlertTriangle,
   FlaskConical,
-  Download,
   BrainCircuit,
   Cloud,
   Smartphone,
@@ -134,430 +132,7 @@ const [error, setError] = useState("");
       });
     }
   };
-// --------------------------------------------------
-// DOWNLOAD AI FLOOD RISK REPORT
-// --------------------------------------------------
-const downloadRiskReport = () => {
-  if (!weatherData) {
-    setError(
-      "Please analyze a location before downloading the report."
-    );
-    return;
-  }
 
-  const prediction =
-    testMode && testPrediction
-      ? testPrediction
-      : weatherData.prediction;
-
-  const risk =
-    prediction?.flood_risk || "UNKNOWN";
-
-  const confidence =
-    prediction?.confidence_percent ?? 0;
-
-  const doc = new jsPDF();
-
-  let y = 20;
-
-  // --------------------------------------------------
-  // HEADER
-  // --------------------------------------------------
-
-  doc.setFontSize(20);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "AI Flood Risk Assessment Report",
-    20,
-    y
-  );
-
-  y += 12;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
-  doc.text(
-    `Generated: ${new Date().toLocaleString()}`,
-    20,
-    y
-  );
-
-  y += 14;
-
-  // --------------------------------------------------
-  // LOCATION
-  // --------------------------------------------------
-
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "1. Location Information",
-    20,
-    y
-  );
-
-  y += 8;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
-  doc.text(
-    `Location: ${
-      selectedLocation || "Selected Location"
-    }`,
-    20,
-    y
-  );
-
-  y += 6;
-
-  doc.text(
-    `Latitude: ${latitude}`,
-    20,
-    y
-  );
-
-  y += 6;
-
-  doc.text(
-    `Longitude: ${longitude}`,
-    20,
-    y
-  );
-
-  y += 12;
-
-  // --------------------------------------------------
-  // AI PREDICTION
-  // --------------------------------------------------
-
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "2. AI Flood Risk Prediction",
-    20,
-    y
-  );
-
-  y += 8;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
-  doc.text(
-    `Flood Risk Level: ${risk}`,
-    20,
-    y
-  );
-
-  y += 6;
-
-  doc.text(
-    `Model Confidence: ${confidence}%`,
-    20,
-    y
-  );
-
-  y += 6;
-
-  doc.text(
-    `AI Model: ${
-      prediction?.model || "Random Forest"
-    }`,
-    20,
-    y
-  );
-
-  y += 12;
-
-  // --------------------------------------------------
-  // WEATHER CONDITIONS
-  // --------------------------------------------------
-
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "3. Weather Conditions",
-    20,
-    y
-  );
-
-  y += 8;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
- const reportTemperature =
-  testMode && testPrediction
-    ? testPrediction.test_features?.temperature
-    : weatherData.weather_conditions?.current_temperature_c;
-
-const reportHumidity =
-  testMode && testPrediction
-    ? testPrediction.test_features?.humidity
-    : weatherData.weather_conditions?.current_humidity_percent;
-
-const reportCurrentRain =
-  testMode && testPrediction
-    ? testPrediction.test_features?.current_rain
-    : weatherData.weather_conditions?.current_rain_mm;
-
-doc.text(
-  `Temperature: ${reportTemperature ?? "--"} °C`,
-  20,
-  y
-);
-
-y += 6;
-
-doc.text(
-  `Humidity: ${reportHumidity ?? "--"} %`,
-  20,
-  y
-);
-
-y += 6;
-
-doc.text(
-  `Current Rain: ${reportCurrentRain ?? "--"} mm`,
-  20,
-  y
-);
-  y += 12;
-const reportRainfall24 =
-  testMode && testPrediction
-    ? testPrediction.test_features?.rainfall_24h
-    : weatherData.rainfall_analysis?.next_24_hours_mm;
-
-const reportRainfall72 =
-  testMode && testPrediction
-    ? testPrediction.test_features?.rainfall_72h
-    : weatherData.rainfall_analysis?.next_72_hours_mm;
-
-const reportPeakHourlyRain =
-  testMode && testPrediction
-    ? testPrediction.test_features?.max_hourly_rain
-    : weatherData.rainfall_analysis?.maximum_hourly_rain_mm;
-    // --------------------------------------------------
-  // RAINFALL ANALYSIS
-  // --------------------------------------------------
-
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "4. Rainfall Analysis",
-    20,
-    y
-  );
-
-  y += 8;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
-  doc.text(
-  `Next 24 Hours: ${
-  reportRainfall24 ?? "--"
- } mm`,
-    20,
-    y
-  );
-
-  y += 6;
-
-  doc.text(
-    `Next 72 Hours: ${
-  reportRainfall72 ?? "--"
-    } mm`,
-    20,
-    y
-  );
-
-  y += 6;
-
-  doc.text(
-   `Peak Hourly Rainfall: ${
-  reportPeakHourlyRain ?? "--"
-    } mm`,
-    20,
-    y
-  );
-
-  y += 12;
-
-  // --------------------------------------------------
-  // RISK FACTORS
-  // --------------------------------------------------
-
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "5. Detected Risk Factors",
-    20,
-    y
-  );
-
-  y += 8;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
-  const factors =
-    testMode && testPrediction
-      ? testPrediction.risk_factors
-      : weatherData.risk_factors;
-
-  if (factors?.length > 0) {
-    factors.forEach((factor) => {
-
-      const lines =
-        doc.splitTextToSize(
-          `- ${factor}`,
-          170
-        );
-
-      doc.text(
-        lines,
-        20,
-        y
-      );
-
-      y +=
-        lines.length * 5 + 2;
-    });
-  } else {
-    doc.text(
-      "No major rainfall-related risk factors detected.",
-      20,
-      y
-    );
-
-    y += 6;
-  }
-
-  y += 6;
-
-  // --------------------------------------------------
-  // AI EXPLANATION
-  // --------------------------------------------------
-
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "6. AI Risk Explanation",
-    20,
-    y
-  );
-
-  y += 8;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
-  const explanation =
-  testMode && testPrediction
-    ? testPrediction.risk_explanation
-    : weatherData.risk_explanation;
-
-const finalExplanation =
-  explanation ||
-  "AI risk explanation unavailable.";
-  const explanationLines =
-  doc.splitTextToSize(
-    finalExplanation,
-    170
-  );
-
-  doc.text(
-    explanationLines,
-    20,
-    y
-  );
-
-  y +=
-    explanationLines.length * 5 + 10;
-
-  // --------------------------------------------------
-  // EARLY WARNING
-  // --------------------------------------------------
-
-  doc.setFontSize(14);
-  doc.setFont("helvetica", "bold");
-
-  doc.text(
-    "7. Early Warning",
-    20,
-    y
-  );
-
-  y += 8;
-
-  doc.setFontSize(10);
-  doc.setFont("helvetica", "normal");
-
-  doc.text(
-    earlyWarning?.title ||
-      "No early warning available.",
-    20,
-    y
-  );
-
-  y += 6;
-
-  const warningLines =
-    doc.splitTextToSize(
-      earlyWarning?.message ||
-        "No additional warning information available.",
-      170
-    );
-
-  doc.text(
-    warningLines,
-    20,
-    y
-  );
-
-  y +=
-    warningLines.length * 5 + 12;
-
-  // --------------------------------------------------
-  // DISCLAIMER
-  // --------------------------------------------------
-
-  doc.setFontSize(9);
-  doc.setFont("helvetica", "italic");
-
-  const disclaimer =
-    "Disclaimer: This report contains an AI-assisted rainfall-based flood risk estimate and is not an official flood warning.";
-
-  const disclaimerLines =
-    doc.splitTextToSize(
-      disclaimer,
-      170
-    );
-
-  doc.text(
-    disclaimerLines,
-    20,
-    y
-  );
-
-  // --------------------------------------------------
-  // SAVE PDF
-  // --------------------------------------------------
-
-  doc.save(
-    "AI_Flood_Risk_Assessment_Report.pdf"
-  );
-};
 const searchCity = async () => {
   if (!city.trim()) {
     setError("Please enter a city or location name.");
@@ -812,6 +387,51 @@ const speakFloodWarning = () => {
     setTestPrediction(null);
     setTestMode(false);
     setError("");
+  };
+  // AUTOMATIC CURRENT LOCATION
+  const detectCurrentLocation = () => {
+    setError("");
+
+    if (!navigator.geolocation) {
+      setError(
+        "Your browser does not support automatic location detection."
+      );
+      return;
+    }
+
+    setLoading(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        setLatitude(String(position.coords.latitude));
+        setLongitude(String(position.coords.longitude));
+        setSelectedLocation("Current Location");
+        setCity("");
+        setLocationResults([]);
+        setWeatherData(null);
+        setForecastData(null);
+        setTestPrediction(null);
+        setTestMode(false);
+        setLoading(false);
+        setError("");
+      },
+      (locationError) => {
+        setLoading(false);
+
+        if (locationError.code === 1) {
+          setError("Location permission denied. Please allow location access in your browser.");
+        } else if (locationError.code === 2) {
+          setError("Your current location could not be determined. Please try again.");
+        } else {
+          setError("Location request timed out. Please try again.");
+        }
+      },
+      {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 60000,
+      }
+    );
   };
 
 
@@ -1381,36 +1001,33 @@ const earlyWarningMessage =
                     Search Location
                   </>
                 )}
-
               </button>
-
             </div>
-
-
+            <button
+              type="button"
+              className="location-search-button"
+              onClick={detectCurrentLocation}
+              disabled={loading}
+              style={{ marginTop: "12px", width: "100%" }}
+            >
+              <Navigation size={18} />
+              {loading ? "Detecting Location..." : "Use My Current Location"}
+            </button>
             {/* SELECTED LOCATION */}
-
             {selectedLocation && (
               <div className="selected-location-message">
-
                 <MapPin size={16} />
-
                 Selected:
                 <strong>
                   {selectedLocation}
                 </strong>
-
               </div>
             )}
-
-
             {/* SEARCH RESULTS */}
-
             {locationResults.length > 0 && (
               <div className="location-results">
-
                 {locationResults.map(
                   (place, index) => (
-
                     <button
                       type="button"
                       className="location-result-item"
@@ -1419,15 +1036,11 @@ const earlyWarningMessage =
                         chooseLocation(place)
                       }
                     >
-
                       <MapPin size={18} />
-
                       <div>
-
                         <strong>
                           {place.name}
                         </strong>
-
                         <span>
                           {[
                             place.district,
@@ -1437,25 +1050,18 @@ const earlyWarningMessage =
                             .filter(Boolean)
                             .join(", ")}
                         </span>
-
                         <small>
                           {place.latitude},{" "}
                           {place.longitude}
                         </small>
 
                       </div>
-
                     </button>
-
                   )
                 )}
-
               </div>
             )}
-
           </div>
-
-
           {/* --------------------------------------------------
               COORDINATES + BUTTONS
           -------------------------------------------------- */}
@@ -1571,14 +1177,7 @@ const earlyWarningMessage =
                 ? "Exit AI Test Mode"
                 : "AI Test Mode"}
             </button>
-<button
-  type="button"
-  className="download-report-button"
-  onClick={downloadRiskReport}
-  disabled={!weatherData}
->
-  <Download size={16} aria-hidden="true" />{" "}Download AI Report
-</button>
+
 
             {/* --------------------------------------------------
                 TEST SCENARIOS

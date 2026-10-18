@@ -642,7 +642,7 @@ def get_weather_data(
         if (
             time.time()
             - cached_time
-            < 600
+            < 1800
         ):
 
             return weather_data
@@ -683,18 +683,20 @@ def get_weather_data(
         "forecast_days": 4,
         "timezone": "Asia/Kolkata"
     }
-
     response = requests.get(
-
         WEATHER_API_URL,
-
         params=params,
-
         timeout=15
     )
 
-    response.raise_for_status()
+    if response.status_code == 429:
+        raise requests.exceptions.HTTPError(
+            "Open-Meteo rate limit reached. "
+            "Please wait a few minutes and try again.",
+            response=response
+        )
 
+    response.raise_for_status()
     weather_data = response.json()
 
     weather_cache[cache_key] = (
