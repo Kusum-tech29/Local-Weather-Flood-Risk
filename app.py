@@ -514,18 +514,9 @@ def get_weather_data(
 ):
 
     cache_key = (
-
-        round(
-            latitude,
-            2
-        ),
-
-        round(
-            longitude,
-            2
-        )
-
-    )
+    round(latitude, 4),
+    round(longitude, 4)
+)
 
     cached_data = weather_cache.get(
         cache_key
