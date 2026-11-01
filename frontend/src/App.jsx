@@ -1573,7 +1573,7 @@ const earlyWarningMessage =
                 <div>
 
                   <p>
-                    Max Hourly Rain
+                    Forecast Peak Hourly Rain
                   </p>
 
                   <h3>
@@ -1587,7 +1587,7 @@ const earlyWarningMessage =
                   </h3>
 
                   <span>
-                    Rainfall intensity
+                    Forecast rainfall intensity
                   </span>
 
                 </div>
