@@ -512,11 +512,10 @@ def get_weather_data(
     latitude,
     longitude
 ):
-
     cache_key = (
-    round(latitude, 4),
-    round(longitude, 4)
-)
+        round(latitude, 4),
+        round(longitude, 4)
+    )
 
     cached_data = weather_cache.get(
         cache_key
@@ -575,10 +574,19 @@ def get_weather_data(
     response = requests.get(
         WEATHER_API_URL,
         params=params,
-        timeout=15
+        headers={
+            "User-Agent": "LocalWeatherFloodRisk/1.0",
+            "Accept": "application/json"
+        },
+        timeout=20
     )
 
     if response.status_code == 429:
+        print("OPEN-METEO RATE LIMIT DETAILS:")
+        print("Status:", response.status_code)
+        print("Retry-After:", response.headers.get("Retry-After"))
+        print("Response:", response.text[:1000])
+
         raise requests.exceptions.HTTPError(
             "Open-Meteo rate limit reached. "
             "Please wait a few minutes and try again.",
@@ -589,15 +597,11 @@ def get_weather_data(
     weather_data = response.json()
 
     weather_cache[cache_key] = (
-
         time.time(),
-
         weather_data
-
     )
 
     return weather_data
-
 # ==================================================
 # ELEVATION DATA
 # ==================================================
