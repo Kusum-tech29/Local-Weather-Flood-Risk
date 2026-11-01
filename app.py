@@ -9,7 +9,7 @@ import psycopg2
 import joblib
 import pandas as pd
 import traceback
-from datetime import datetime
+from datetime import datetime, timedelta
 from math import (
     radians,
     sin,
@@ -56,6 +56,7 @@ DATABASE_PATH = (
     "flood_risk_history.db"
 )
 DATABASE_URL = os.environ.get("DATABASE_URL")
+WEATHERAPI_KEY = os.environ.get("WEATHERAPI_KEY")
 
 MODEL_PATH = os.path.join(
     "models",
@@ -508,99 +509,182 @@ def get_nearby_water_feature(latitude, longitude):
 # WEATHER DATA
 # ==================================================
 
-def get_weather_data(
-    latitude,
-    longitude
-):
-    cache_key = (
-        round(latitude, 4),
-        round(longitude, 4)
-    )
+def get_weather_data(latitude, longitude):
+    cache_key = (round(latitude, 4), round(longitude, 4))
 
-    cached_data = weather_cache.get(
-        cache_key
-    )
-
+    cached_data = weather_cache.get(cache_key)
     if cached_data:
-
-        cached_time, weather_data = (
-            cached_data
-        )
-
-        if (
-            time.time()
-            - cached_time
-            < 1800
-        ):
-
+        cached_time, weather_data = cached_data
+        if time.time() - cached_time < 1800:
             return weather_data
 
-    if not WEATHER_API_URL:
-
-        raise ValueError(
-            "Weather API URL is not configured"
-        )
-
     params = {
-
-        "latitude":
-            latitude,
-
-        "longitude":
-            longitude,
-
+        "latitude": latitude,
+        "longitude": longitude,
         "current": (
-
             "temperature_2m,"
             "relative_humidity_2m,"
             "precipitation,"
             "rain,"
             "weather_code"
-
         ),
-
         "hourly": (
-
             "precipitation,"
             "rain,"
             "temperature_2m,"
             "relative_humidity_2m"
-
         ),
         "past_days": 3,
         "forecast_days": 4,
         "timezone": "Asia/Kolkata"
     }
-    response = requests.get(
-        WEATHER_API_URL,
-        params=params,
-        headers={
-            "User-Agent": "LocalWeatherFloodRisk/1.0",
-            "Accept": "application/json"
-        },
-        timeout=20
-    )
 
-    if response.status_code == 429:
-        print("OPEN-METEO RATE LIMIT DETAILS:")
-        print("Status:", response.status_code)
-        print("Retry-After:", response.headers.get("Retry-After"))
-        print("Response:", response.text[:1000])
-
-        raise requests.exceptions.HTTPError(
-            "Open-Meteo rate limit reached. "
-            "Please wait a few minutes and try again.",
-            response=response
+    # 1. Primary provider: Open-Meteo
+    try:
+        response = requests.get(
+            WEATHER_API_URL,
+            params=params,
+            headers={
+                "User-Agent": "LocalWeatherFloodRisk/1.0",
+                "Accept": "application/json"
+            },
+            timeout=20
         )
 
-    response.raise_for_status()
-    weather_data = response.json()
+        if response.status_code != 429:
+            response.raise_for_status()
+            weather_data = response.json()
 
-    weather_cache[cache_key] = (
-        time.time(),
-        weather_data
+            weather_cache[cache_key] = (time.time(), weather_data)
+            return weather_data
+
+        print("Open-Meteo rate limit reached. Trying WeatherAPI.")
+
+    except requests.exceptions.RequestException as error:
+        print("Open-Meteo request failed:", error)
+
+    # 2. Fallback provider: WeatherAPI
+    if not WEATHERAPI_KEY:
+        raise ValueError(
+            "Open-Meteo unavailable and WEATHERAPI_KEY is not configured."
+        )
+
+    base_url = "https://api.weatherapi.com/v1"
+    common_params = {
+        "key": WEATHERAPI_KEY,
+        "q": f"{latitude},{longitude}"
+    }
+
+    forecast_response = requests.get(
+        f"{base_url}/forecast.json",
+        params={**common_params, "days": 3},
+        timeout=20
     )
+    forecast_response.raise_for_status()
+    forecast_data = forecast_response.json()
 
+    current_data = forecast_data["current"]
+    location_data = forecast_data["location"]
+
+    local_date = datetime.strptime(
+        location_data["localtime"][:10],
+        "%Y-%m-%d"
+    ).date()
+
+    hourly_records = []
+
+    # Previous three calendar days
+    for days_ago in (3, 2, 1):
+        history_date = (
+            local_date - timedelta(days=days_ago)
+        ).isoformat()
+
+        history_response = requests.get(
+            f"{base_url}/history.json",
+            params={**common_params, "dt": history_date},
+            timeout=20
+        )
+        history_response.raise_for_status()
+        history_data = history_response.json()
+
+        hourly_records.extend(
+            history_data["forecast"]["forecastday"][0]["hour"]
+        )
+
+    # Current day and forecast hours
+    for day in forecast_data["forecast"]["forecastday"]:
+        hourly_records.extend(day["hour"])
+
+    # Sort and remove duplicate timestamps
+    unique_hours = {}
+
+    for hour in hourly_records:
+        hour_time = hour["time"].replace(" ", "T")
+        unique_hours[hour_time] = hour
+
+    sorted_times = sorted(unique_hours.keys())
+
+    # Align current time to the exact hourly timestamp
+    current_time = datetime.fromisoformat(
+        current_data["last_updated"].replace(" ", "T")
+    ).replace(minute=0, second=0, microsecond=0)
+
+    current_hour_text = current_time.strftime("%Y-%m-%dT%H:00")
+
+    if current_hour_text not in unique_hours:
+        raise ValueError(
+            "WeatherAPI data does not contain the current hourly record."
+        )
+
+    # Verify the exact 72 hourly records needed by the risk calculation
+    past_times = [
+        (current_time - timedelta(hours=i)).strftime("%Y-%m-%dT%H:00")
+        for i in range(71, -1, -1)
+    ]
+
+    missing_hours = [
+        hour_time for hour_time in past_times
+        if hour_time not in unique_hours
+    ]
+
+    if missing_hours:
+        raise ValueError(
+            "WeatherAPI historical data is incomplete. "
+            f"Missing {len(missing_hours)} hourly records; "
+            "72-hour rainfall estimate cannot be calculated reliably."
+        )
+
+    hourly_data = [unique_hours[t] for t in sorted_times]
+
+    weather_data = {
+        "current": {
+            "time": current_hour_text,
+            "temperature_2m": current_data["temp_c"],
+            "relative_humidity_2m": current_data["humidity"],
+            "precipitation": current_data["precip_mm"],
+            "rain": current_data["precip_mm"],
+            "weather_code": 0
+        },
+        "hourly": {
+            "time": sorted_times,
+            "precipitation": [
+                hour["precip_mm"] for hour in hourly_data
+            ],
+            "rain": [
+                hour["precip_mm"] for hour in hourly_data
+            ],
+            "temperature_2m": [
+                hour["temp_c"] for hour in hourly_data
+            ],
+            "relative_humidity_2m": [
+                hour["humidity"] for hour in hourly_data
+            ]
+        }
+    }
+
+    weather_cache[cache_key] = (time.time(), weather_data)
+
+    print("WeatherAPI fallback successful.")
     return weather_data
 # ==================================================
 # ELEVATION DATA
@@ -648,8 +732,6 @@ def get_elevation_data(latitude, longitude):
         print("WARNING: Elevation data unavailable:", error)
 
         return None
-
-
 # ==================================================
 # WEATHER TEST ROUTE
 # ==================================================
