@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+﻿import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   FlaskConical,
@@ -1945,70 +1945,48 @@ const earlyWarningMessage =
 
 
                 <div className="rainfall-stats">
-                <div>
-                  <span>Past 24 Hours</span>
-                  <strong>
-                    {weatherData.rainfall_analysis?.past_24_hours_mm ?? "--"} mm
-                  </strong>
-                </div>
+  <div>
+    <span>Past 24 Hours</span>
+    <strong>
+      {weatherData.rainfall_analysis?.past_24_hours_mm ?? "--"} mm
+    </strong>
+  </div>
 
-               <div>
-                <span>Past 72 Hours</span>
-                <strong>
-                  {weatherData.rainfall_analysis?.past_72_hours_mm ?? "--"} mm
-                </strong>
-              </div>
-                  <div>
+  <div>
+    <span>Past 72 Hours</span>
+    <strong>
+      {weatherData.rainfall_analysis?.past_72_hours_mm ?? "--"} mm
+    </strong>
+  </div>
 
-                    <span>
-                      Next 24 Hours
-                    </span>
+  <div>
+    <span>Next 24 Hours</span>
+    <strong>
+      {weatherData.rainfall_analysis?.next_24_hours_mm ?? "--"} mm
+    </strong>
+  </div>
 
-                    <strong>
-                      {weatherData
-                        .rainfall_analysis
-                        ?.next_24_hours_mm ??
-                        "--"}{" "}
-                      mm
-                    </strong>
+  <div>
+    <span>Next 72 Hours</span>
+    <strong>
+      {weatherData.rainfall_analysis?.next_72_hours_mm ?? "--"} mm
+    </strong>
+  </div>
 
-                  </div>
+  <div>
+    <span>Past Peak Hourly</span>
+    <strong>
+      {weatherData.rainfall_analysis?.past_maximum_hourly_rain_mm ?? "--"} mm
+    </strong>
+  </div>
 
-
-                  <div>
-
-                    <span>
-                      Next 72 Hours
-                    </span>
-
-                    <strong>
-                      {weatherData
-                        .rainfall_analysis
-                        ?.next_72_hours_mm ??
-                        "--"}{" "}
-                      mm
-                    </strong>
-
-                  </div>
-
-
-                  <div>
-
-                    <span>
-                      Peak Hourly
-                    </span>
-
-                    <strong>
-                      {weatherData
-                        .rainfall_analysis
-                        ?.maximum_hourly_rain_mm ??
-                        "--"}{" "}
-                      mm
-                    </strong>
-
-                  </div>
-
-                </div>
+  <div>
+    <span>Forecast Peak Hourly</span>
+    <strong>
+      {weatherData.rainfall_analysis?.maximum_hourly_rain_mm ?? "--"} mm
+    </strong>
+  </div>
+</div>
 
               </article>
 

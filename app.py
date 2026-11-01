@@ -3452,8 +3452,8 @@ def flood_risk():
             flood_risk=risk_level,
 
             confidence=confidence,
-            rainfall_24h=forecast_rainfall_24h,
-            rainfall_72h=forecast_rainfall_72h,
+            rainfall_24h=rainfall_24h,
+            rainfall_72h=rainfall_72h,
             temperature=current_temperature,
 
             humidity=current_humidity
@@ -3686,6 +3686,7 @@ def flood_risk():
 
             "rainfall_analysis": {
                 "past_24_hours_mm": rainfall_24h,
+                "past_maximum_hourly_rain_mm": max_hourly_rain,
                 "past_72_hours_mm": rainfall_72h,
                 "next_24_hours_mm": forecast_rainfall_24h,
                 "next_72_hours_mm": forecast_rainfall_72h,
