@@ -5,9 +5,10 @@ from dotenv import load_dotenv
 import requests
 import time
 import os
-import sqlite3
+import psycopg2
 import joblib
 import pandas as pd
+import traceback
 from datetime import datetime
 from math import (
     radians,
@@ -17,6 +18,7 @@ from math import (
     sqrt,
     atan2
 )
+import math
 
 
 # ==================================================
@@ -53,6 +55,7 @@ WEATHER_API_URL = (
 DATABASE_PATH = (
     "flood_risk_history.db"
 )
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
 MODEL_PATH = os.path.join(
     "models",
@@ -278,25 +281,19 @@ def search_location():
 
     except requests.exceptions.RequestException as error:
 
-        return jsonify({
-
-            "error":
-                "Location search service failed",
-
-            "details":
-                str(error)
-
-        }), 500
+       return jsonify({
+           "error": "Location search API request failed",
+           "details": str(error)
+       }), 500
 
 
 # ==================================================
 # PREDICTION HISTORY DATABASE
 # ==================================================
-
 def init_database():
 
-    connection = sqlite3.connect(
-        DATABASE_PATH
+    connection = psycopg2.connect(
+        DATABASE_URL
     )
 
     cursor = connection.cursor()
@@ -305,23 +302,23 @@ def init_database():
         """
         CREATE TABLE IF NOT EXISTS prediction_history (
 
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            id SERIAL PRIMARY KEY,
 
-            latitude REAL NOT NULL,
+            latitude DOUBLE PRECISION NOT NULL,
 
-            longitude REAL NOT NULL,
+            longitude DOUBLE PRECISION NOT NULL,
 
             flood_risk TEXT NOT NULL,
 
-            confidence REAL,
+            confidence DOUBLE PRECISION,
 
-            rainfall_24h REAL,
+            rainfall_24h DOUBLE PRECISION,
 
-            rainfall_72h REAL,
+            rainfall_72h DOUBLE PRECISION,
 
-            temperature REAL,
+            temperature DOUBLE PRECISION,
 
-            humidity REAL,
+            humidity DOUBLE PRECISION,
 
             created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 
@@ -331,6 +328,7 @@ def init_database():
 
     connection.commit()
 
+    cursor.close()
     connection.close()
 
 
@@ -392,220 +390,120 @@ def calculate_distance_km(
 # WATER FEATURE / RIVER PROXIMITY
 # ==================================================
 
-def get_nearby_water_feature(
-    latitude,
-    longitude
-):
+def get_nearby_water_feature(latitude, longitude):
 
-    nominatim_url = (
-        "https://nominatim.openstreetmap.org/search"
-    )
-
-    reverse_url = (
-        "https://nominatim.openstreetmap.org/reverse"
-    )
+    nominatim_url = "https://nominatim.openstreetmap.org/search"
+    reverse_url = "https://nominatim.openstreetmap.org/reverse"
 
     headers = {
-
-        "User-Agent":
-            "LocalWeatherFloodRisk/1.0"
+        "User-Agent": "LocalWeatherFloodRisk/1.0"
     }
 
-    reverse_params = {
+    try:
+        reverse_params = {
+            "lat": latitude,
+            "lon": longitude,
+            "format": "json",
+            "zoom": 10
+        }
 
-        "lat":
-            latitude,
+        reverse_response = requests.get(
+            reverse_url,
+            params=reverse_params,
+            headers=headers,
+            timeout=15
+        )
+        reverse_response.raise_for_status()
 
-        "lon":
-            longitude,
+        reverse_data = reverse_response.json()
 
-        "format":
-            "json",
+        if not isinstance(reverse_data, dict):
+            return None
 
-        "zoom":
-            10
-    }
+        address = reverse_data.get("address", {})
 
-    reverse_response = requests.get(
+        city = (
+            address.get("city")
+            or address.get("town")
+            or address.get("municipality")
+            or address.get("county")
+            or ""
+        )
 
-        reverse_url,
-
-        params=reverse_params,
-
-        headers=headers,
-
-        timeout=15
-    )
-
-    reverse_response.raise_for_status()
-
-    reverse_data = (
-        reverse_response.json()
-    )
-
-    address = reverse_data.get(
-        "address",
-        {}
-    )
-
-    city = (
-
-        address.get("city")
-
-        or address.get("town")
-
-        or address.get("municipality")
-
-        or address.get("county")
-
-        or ""
-
-    )
-
-    state = address.get(
-        "state",
-        ""
-    )
-
-    if city:
+        state = address.get("state", "")
 
         query = (
             f"river near {city}, {state}"
+            if city
+            else f"river near {latitude}, {longitude}"
         )
 
-    else:
+        params = {
+            "q": query,
+            "format": "json",
+            "limit": 10
+        }
 
-        query = (
-            f"river near {latitude}, {longitude}"
+        response = requests.get(
+            nominatim_url,
+            params=params,
+            headers=headers,
+            timeout=15
         )
+        response.raise_for_status()
 
-    params = {
+        results = response.json()
 
-        "q":
-            query,
+        if not isinstance(results, list):
+            return None
 
-        "format":
-            "json",
-
-        "limit":
-            10
-    }
-
-    response = requests.get(
-
-        nominatim_url,
-
-        params=params,
-
-        headers=headers,
-
-        timeout=15
-    )
-
-    response.raise_for_status()
-
-    results = response.json()
-
-    water_features = [
-
-        item
-
-        for item in results
-
-        if item.get("class") == "waterway"
-
-        and item.get("type") in [
-
-            "river",
-            "stream",
-            "canal"
-
+        water_features = [
+            item for item in results
+            if isinstance(item, dict)
+            and item.get("class") == "waterway"
+            and item.get("type") in ["river", "stream", "canal"]
+            and item.get("lat")
+            and item.get("lon")
         ]
 
-        and item.get("lat")
+        if not water_features:
+            return None
 
-        and item.get("lon")
-
-    ]
-
-    if not water_features:
-
-        return None
-
-    nearest = min(
-
-        water_features,
-
-        key=lambda item:
-            calculate_distance_km(
-
+        nearest = min(
+            water_features,
+            key=lambda item: calculate_distance_km(
                 latitude,
-
                 longitude,
-
-                float(
-                    item["lat"]
-                ),
-
-                float(
-                    item["lon"]
-                )
-
+                float(item["lat"]),
+                float(item["lon"])
             )
-
-    )
-
-    distance_km = calculate_distance_km(
-
-        latitude,
-
-        longitude,
-
-        float(
-            nearest["lat"]
-        ),
-
-        float(
-            nearest["lon"]
         )
 
-    )
+        distance_km = calculate_distance_km(
+            latitude,
+            longitude,
+            float(nearest["lat"]),
+            float(nearest["lon"])
+        )
 
-    return {
+        return {
+            "name": nearest.get("name", "Water Feature"),
+            "type": nearest.get("type"),
+            "latitude": float(nearest["lat"]),
+            "longitude": float(nearest["lon"]),
+            "distance_km": round(distance_km, 2),
+            "near_water_feature": distance_km <= 5
+        }
 
-        "name":
-            nearest.get(
-                "name",
-                "Water Feature"
-            ),
+    except (
+        requests.exceptions.RequestException,
+        ValueError,
+        TypeError,
+        KeyError
+    ) as error:
 
-        "type":
-            nearest.get(
-                "type"
-            ),
-
-        "latitude":
-            float(
-                nearest["lat"]
-            ),
-
-        "longitude":
-            float(
-                nearest["lon"]
-            ),
-
-        "distance_km":
-            round(
-                distance_km,
-                2
-            ),
-
-        "near_water_feature":
-            distance_km <= 5
-
-    }
-
-
+        print("WARNING: Water feature lookup failed:", error)
+        return None
 # ==================================================
 # WEATHER DATA
 # ==================================================
@@ -709,56 +607,52 @@ def get_weather_data(
 
     return weather_data
 
-
 # ==================================================
 # ELEVATION DATA
 # ==================================================
 
-def get_elevation_data(
-    latitude,
-    longitude
-):
+def get_elevation_data(latitude, longitude):
 
-    elevation_url = (
-        "https://api.open-meteo.com/v1/elevation"
-    )
+    elevation_url = "https://api.open-meteo.com/v1/elevation"
 
     params = {
-
-        "latitude":
-            latitude,
-
-        "longitude":
-            longitude
+        "latitude": latitude,
+        "longitude": longitude
     }
 
-    response = requests.get(
-
-        elevation_url,
-
-        params=params,
-
-        timeout=10
-    )
-
-    response.raise_for_status()
-
-    data = response.json()
-
-    elevation_values = data.get(
-        "elevation",
-        []
-    )
-
-    if not elevation_values:
-
-        raise ValueError(
-            "Elevation data is not available for this location"
+    try:
+        response = requests.get(
+            elevation_url,
+            params=params,
+            timeout=10
         )
 
-    return float(
-        elevation_values[0]
-    )
+        response.raise_for_status()
+
+        data = response.json()
+
+        elevation_values = data.get("elevation", [])
+
+        if not elevation_values:
+            return None
+
+        elevation = float(elevation_values[0])
+
+        if not math.isfinite(elevation):
+            return None
+
+        return elevation
+
+    except (
+        requests.exceptions.RequestException,
+        ValueError,
+        TypeError,
+        KeyError
+    ) as error:
+
+        print("WARNING: Elevation data unavailable:", error)
+
+        return None
 
 
 # ==================================================
@@ -1140,6 +1034,117 @@ def search_geonames_local(place_query, max_results=50):
     )
 
     return results[:max_results]
+
+# ==================================================
+# REVERSE GEOCODING API
+# ==================================================
+
+@app.route("/reverse-geocode", methods=["GET"])
+def reverse_geocode():
+
+    try:
+        latitude = float(request.args.get("lat"))
+        longitude = float(request.args.get("lon"))
+
+        if not (-90 <= latitude <= 90):
+            return jsonify({"error": "Invalid latitude"}), 400
+
+        if not (-180 <= longitude <= 180):
+            return jsonify({"error": "Invalid longitude"}), 400
+
+        response = requests.get(
+            "https://nominatim.openstreetmap.org/reverse",
+            params={
+                "lat": latitude,
+                "lon": longitude,
+                "format": "jsonv2",
+                "zoom": 18,
+                "addressdetails": 1
+            },
+            headers={
+                "User-Agent": "LocalWeatherFloodRisk/1.0"
+            },
+            timeout=10
+        )
+
+        response.raise_for_status()
+        result = response.json()
+        address = result.get("address", {})
+
+        locality = (
+    address.get("village")
+    or address.get("hamlet")
+    or address.get("suburb")
+    or address.get("neighbourhood")
+    or address.get("quarter")
+    or address.get("residential")
+    or address.get("city_district")
+    or address.get("town")
+    or address.get("municipality")
+    or address.get("locality")
+    or address.get("city")
+    or address.get("county")
+)
+
+        district = (
+            address.get("state_district")
+            or address.get("district")
+            or address.get("county")
+        )
+        if not locality:
+            display_parts = [
+                part.strip()
+                for part in result.get("display_name", "").split(",")
+                if part.strip()
+            ]
+
+            excluded_names = {
+                address.get("state_district"),
+                address.get("district"),
+                address.get("state"),
+                address.get("country"),
+            }
+
+            locality = next(
+                (
+                    part for part in display_parts
+                    if part not in excluded_names
+                ),
+                None
+            )
+
+        state = address.get("state")
+        country = address.get("country")
+
+        place_name = ", ".join(
+            part for part in [
+                locality,
+                district,
+                state,
+                country
+            ] if part
+        )
+
+        return jsonify({
+            "place_name": place_name or result.get("display_name", "Place name unavailable"),
+            "locality": locality,
+            "district": district,
+            "state": state,
+            "country": country,
+            "latitude": latitude,
+            "longitude": longitude
+        })
+
+    except (TypeError, ValueError):
+        return jsonify({
+            "error": "Please provide valid latitude and longitude"
+        }), 400
+
+    except requests.exceptions.RequestException as error:
+        print("WARNING: Reverse geocoding failed:", error)
+        return jsonify({
+            "error": "Unable to determine place name right now"
+        }), 502
 
 
 # ==================================================
@@ -1679,7 +1684,18 @@ def search_place():
                 else:
 
                     score -= 2500
+            # --------------------------------------------------
+            # DEFAULT INDIA PRIORITY FOR AMBIGUOUS SEARCH
+            # --------------------------------------------------
 
+            if not normalized_context:
+
+                country_code = str(
+                    place.get("country_code", "")
+                ).upper()
+
+                if country == "india" or country_code == "IN":
+                    score += 3500
             # --------------------------------------------------
             # PLACE TYPE PRIORITY
             # --------------------------------------------------
@@ -2472,7 +2488,6 @@ def search_place():
                     )
 
                     break
-
             if requested_country:
 
                 filtered_places = []
@@ -2480,44 +2495,23 @@ def search_place():
                 for place in places:
 
                     place_country = normalize(
-
-                        place.get(
-                            "country"
-                        )
-
+                        place.get("country")
                     )
 
                     if (
-
-                        requested_country
-                        == place_country
-
-                        or
-
-                        requested_country
-                        in place_country
-
-                        or
-
-                        place_country
-                        in requested_country
-
+                        requested_country == place_country
+                        or requested_country in place_country
+                        or place_country in requested_country
                     ):
+                        filtered_places.append(place)
 
-                        filtered_places.append(
-                            place
-                        )
-                        places = filtered_places
-
-
-
-
-        # ==================================================
-        # CONTEXTUAL STATE FILTER
+                if filtered_places:
+                    places = filtered_places
+                # ==================================================
+        # CONTEXTUAL STATE AND DISTRICT FILTER
         # ==================================================
 
         state_names = {
-
             "uttar pradesh",
             "bihar",
             "uttarakhand",
@@ -2541,75 +2535,80 @@ def search_place():
             "delhi",
             "himachal pradesh",
             "jammu and kashmir"
-
         }
 
-        requested_state = None
+        country_names = {
+            "india", "in",
+            "usa", "us",
+            "uk", "uae"
+        }
 
-        for context in normalized_context:
-
-            if context in state_names:
-
-                requested_state = context
-
-                break
+        # STATE FILTER
+        requested_state = next(
+            (
+                context
+                for context in normalized_context
+                if context in state_names
+            ),
+            None
+        )
 
         if requested_state:
-
-            state_filtered = []
-
-            for place in places:
-
-                place_state = normalize(
-                    place.get(
-                        "state"
-                    )
+            state_filtered = [
+                place
+                for place in places
+                if requested_state in normalize(
+                    place.get("state")
                 )
-
-                if (
-
-                    requested_state
-                    == place_state
-
-                    or
-
-                    requested_state
-                    in place_state
-
-                ):
-
-                    state_filtered.append(
-                        place
-                    )
+            ]
 
             if state_filtered:
-
                 places = state_filtered
-        # ==================================================
-        # EXACT PLACE-NAME RELEVANCE FILTER
-        # ==================================================
+                # DISTRICT / CITY CONTEXT FILTER
+        requested_district = next(
+            (
+                context
+                for context in normalized_context
+                if context not in state_names
+                and context not in country_names
+            ),
+            None
+        )
 
-        exact_name_places = []
+        print("DEBUG normalized_context:", normalized_context, flush=True)
+        print("DEBUG requested_district:", requested_district, flush=True)
 
-        for place in places:
+        if requested_district:
 
-            place_name_normalized = normalize(
-                place.get("name")
-            )
-
-            if (
-                place_name_normalized
-                == normalized_main_place
-            ):
-
-                exact_name_places.append(
-                    place
+            district_filtered = [
+                place
+                for place in places
+                if (
+                    normalize(place.get("district")) == requested_district
+                    or normalize(place.get("city")) == requested_district
                 )
+            ]
 
-        # If exact place-name matches exist,
-        # keep ONLY those exact matches.
+            if district_filtered:
+                places = district_filtered
+
+        # EXACT PLACE-NAME RELEVANCE FILTER
+        exact_name_places = [
+            place
+            for place in places
+            if normalize(place.get("name")) == normalized_main_place
+        ]
+
         if exact_name_places:
+            places = exact_name_places
+                # EXACT PLACE-NAME RELEVANCE FILTER
+        exact_name_places = [
+            place
+            for place in places
+            if normalize(place.get("name")) == normalized_main_place
+        ]
 
+        if exact_name_places:
             places = exact_name_places
         # ==================================================
         # RE-SCORE AFTER FILTERING
@@ -2861,6 +2860,24 @@ def search_place():
 
             places = final_exact_places
 
+        #
+        # ==================================================
+        # FINAL DISTRICT CONTEXT ENFORCEMENT
+        # ==================================================
+
+        if requested_district:
+
+            context_matched_places = [
+                place
+                for place in places
+                if (
+                    normalize(place.get("district")) == requested_district
+                    or normalize(place.get("city")) == requested_district
+                )
+            ]
+
+            if context_matched_places:
+                places = context_matched_places
         # ==================================================
         # FINAL RESULT LIMIT
         # ==================================================
@@ -2951,9 +2968,7 @@ def search_place():
 # ==================================================
 # SAVE PREDICTION HISTORY
 # ==================================================
-
 def save_prediction_history(
-
     latitude,
     longitude,
     flood_risk,
@@ -2962,76 +2977,57 @@ def save_prediction_history(
     rainfall_72h,
     temperature,
     humidity
-
 ):
+    connection = None
+    cursor = None
 
-    connection = sqlite3.connect(
-        DATABASE_PATH
-    )
+    try:
+        connection = psycopg2.connect(DATABASE_URL)
+        cursor = connection.cursor()
 
-    cursor = connection.cursor()
 
-    # --------------------------------------------------
-    # REMOVE PREVIOUS PREDICTION
-    # --------------------------------------------------
 
-    cursor.execute(
-
-        """
-        DELETE FROM prediction_history
-        WHERE latitude = ?
-        AND longitude = ?
-        """,
-
-        (
-            latitude,
-            longitude
+        # Save latest prediction
+        cursor.execute(
+            """
+            INSERT INTO prediction_history (
+                latitude,
+                longitude,
+                flood_risk,
+                confidence,
+                rainfall_24h,
+                rainfall_72h,
+                temperature,
+                humidity
+            )
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+            """,
+            (
+                latitude,
+                longitude,
+                flood_risk,
+                confidence,
+                rainfall_24h,
+                rainfall_72h,
+                temperature,
+                humidity
+            )
         )
 
-    )
+        connection.commit()
 
-    # --------------------------------------------------
-    # SAVE LATEST PREDICTION
-    # --------------------------------------------------
+    except Exception:
+        if connection:
+            connection.rollback()
+        raise
 
-    cursor.execute(
+    finally:
+        if cursor:
+            cursor.close()
 
-        """
-        INSERT INTO prediction_history (
+        if connection:
+            connection.close()
 
-            latitude,
-            longitude,
-            flood_risk,
-            confidence,
-            rainfall_24h,
-            rainfall_72h,
-            temperature,
-            humidity
-
-        )
-
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-
-        """,
-
-        (
-
-            latitude,
-            longitude,
-            flood_risk,
-            confidence,
-            rainfall_24h,
-            rainfall_72h,
-            temperature,
-            humidity
-
-        )
-
-    )
-
-    connection.commit()
-
-    connection.close()
 
 
 # ==================================================
@@ -3335,7 +3331,7 @@ def flood_risk():
         rainfall_24h = round(sum(past_24h), 2)
         rainfall_72h = round(sum(past_72h), 2)
         max_hourly_rain = round(max(past_72h), 2)
-                # ==================================================
+        # ==================================================
         # FUTURE RAINFALL FORECAST
         # ==================================================
 
@@ -3360,6 +3356,26 @@ def flood_risk():
         forecast_max_hourly_rain = round(
             max(forecast_72h, default=0), 2
         )
+        # =========================
+        # FORECAST-BASED RAINFALL RISK
+        # =========================
+
+        if (
+            forecast_rainfall_24h >= 35
+            or forecast_rainfall_72h >= 89
+            or forecast_max_hourly_rain >= 12
+        ):
+            forecast_risk_level = "HIGH"
+
+        elif (
+            forecast_rainfall_24h >= 16
+            or forecast_rainfall_72h >= 42
+            or forecast_max_hourly_rain >= 6
+        ):
+            forecast_risk_level = "MEDIUM"
+
+        else:
+            forecast_risk_level = "LOW"
         # ==================================================
         # CURRENT WEATHER
         # ==================================================
@@ -3443,83 +3459,108 @@ def flood_risk():
             humidity=current_humidity
 
         )
-
-        # ==================================================
+                # ==================================================
         # RISK FACTORS
         # ==================================================
 
         risk_factors = []
 
+        # PAST OBSERVED RAINFALL
+
+        if rainfall_24h >= 35:
+
+            risk_factors.append(
+                "Very high rainfall recorded during the past 24 hours"
+            )
+
+        elif rainfall_24h >= 16:
+
+            risk_factors.append(
+                "Significant rainfall recorded during the past 24 hours"
+            )
+
+        if rainfall_72h >= 89:
+
+            risk_factors.append(
+                "Very high accumulated rainfall recorded over the past 72 hours"
+            )
+
+        elif rainfall_72h >= 42:
+
+            risk_factors.append(
+                "Significant accumulated rainfall recorded over the past 72 hours"
+            )
+
+        if max_hourly_rain >= 12:
+
+            risk_factors.append(
+                "High hourly rainfall intensity recorded"
+            )
+
+        elif max_hourly_rain >= 6:
+
+            risk_factors.append(
+                "Moderate hourly rainfall intensity recorded"
+            )
+
+        # FORECAST RAINFALL
+
         if forecast_rainfall_24h >= 35:
 
             risk_factors.append(
-
                 "Very high rainfall expected during the next 24 hours"
-
             )
 
         elif forecast_rainfall_24h >= 16:
 
             risk_factors.append(
-
                 "Significant rainfall expected during the next 24 hours"
-
             )
 
         if forecast_rainfall_72h >= 89:
 
             risk_factors.append(
-
-                "Very high accumulated rainfall expected over 72 hours"
-
+                "Very high accumulated rainfall expected over the next 72 hours"
             )
 
         elif forecast_rainfall_72h >= 42:
 
             risk_factors.append(
-
-                "Significant accumulated rainfall expected over 72 hours"
-
+                "Significant accumulated rainfall expected over the next 72 hours"
             )
 
         if forecast_max_hourly_rain >= 12:
 
             risk_factors.append(
-
-                "High rainfall intensity detected"
-
+                "High forecast rainfall intensity"
             )
 
         elif forecast_max_hourly_rain >= 6:
 
             risk_factors.append(
-
-                "Moderate rainfall intensity detected"
-
+                "Moderate forecast rainfall intensity"
             )
+
+        # HUMIDITY
 
         if current_humidity >= 90:
 
             risk_factors.append(
-
                 "Very high humidity"
-
             )
 
         elif current_humidity >= 80:
 
             risk_factors.append(
-
                 "High humidity"
-
             )
+
+        # CURRENT RAIN
 
         if current_rain > 0:
 
             risk_factors.append(
-
                 "Rainfall currently occurring"
-
             )
 
         # --------------------------------------------------
@@ -3630,38 +3671,27 @@ def flood_risk():
 
             },
 
+
             "prediction": {
+                "flood_risk": risk_level,
+                "confidence_percent": confidence,
+                "class_probabilities": probabilities,
+                "model": "Random Forest"
+            },
 
-                "flood_risk":
-                    risk_level,
-
-                "confidence_percent":
-                    confidence,
-
-                "class_probabilities":
-                    probabilities,
-
-                "model":
-                    "Random Forest"
-
+            "forecast_prediction": {
+                "flood_risk": forecast_risk_level,
+                "model": "Forecast rainfall thresholds"
             },
 
             "rainfall_analysis": {
-            "past_24_hours_mm": rainfall_24h,
-            "past_72_hours_mm": rainfall_72h,
-            "next_24_hours_mm":
-                forecast_rainfall_24h,
-
-            "next_72_hours_mm":
-                forecast_rainfall_72h,
-
-           "maximum_hourly_rain_mm":
-               forecast_max_hourly_rain
-
+                "past_24_hours_mm": rainfall_24h,
+                "past_72_hours_mm": rainfall_72h,
+                "next_24_hours_mm": forecast_rainfall_24h,
+                "next_72_hours_mm": forecast_rainfall_72h,
+                "maximum_hourly_rain_mm": forecast_max_hourly_rain
             },
-
             "weather_conditions": {
-
                 "current_humidity_percent":
                     current_humidity,
 
@@ -3697,15 +3727,21 @@ def flood_risk():
 
     except requests.exceptions.RequestException as error:
 
-        return jsonify({
+       print("\n========== FLOOD RISK ERROR TRACEBACK ==========")
 
-            "error":
-                "Weather API request failed",
+       traceback.print_exc()
 
-            "details":
-                str(error)
+       print("================================================\n")
 
-        }), 500
+       return jsonify({
+
+          "error":
+             "Weather API request failed",
+
+          "details":
+            str(error)
+
+      }), 500
 
     except (
         KeyError,
@@ -4019,75 +4055,62 @@ def test_flood_risk():
 # ==================================================
 # PREDICTION HISTORY API
 # ==================================================
-
 @app.route(
     "/prediction-history"
 )
 def prediction_history():
 
-    connection = sqlite3.connect(
-        DATABASE_PATH
+    connection = psycopg2.connect(
+        DATABASE_URL
     )
-
-    connection.row_factory = sqlite3.Row
 
     cursor = connection.cursor()
 
     cursor.execute(
-
         """
         SELECT
-
             id,
-
             latitude,
-
             longitude,
-
             flood_risk,
-
             confidence,
-
             rainfall_24h,
-
             rainfall_72h,
-
             temperature,
-
             humidity,
-
             created_at
-
         FROM prediction_history
-
         ORDER BY id DESC
-
         LIMIT 20
-
         """
-
     )
 
     rows = cursor.fetchall()
 
-    connection.close()
-
-    history = [
-
-        dict(row)
-
-        for row in rows
-
+    columns = [
+        description[0]
+        for description in cursor.description
     ]
 
+    cursor.close()
+    connection.close()
+
+    history = []
+
+    for row in rows:
+
+        record = dict(zip(columns, row))
+
+        if record["created_at"]:
+            record["created_at"] = (
+                record["created_at"].isoformat()
+            )
+
+        history.append(record)
+
     return jsonify({
-
-        "count":
-            len(history),
-
-        "history":
-            history
-
+        "count": len(history),
+        "history": history
     })
 
 

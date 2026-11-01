@@ -1,4 +1,4 @@
-﻿import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertTriangle,
   FlaskConical,
@@ -87,6 +87,7 @@ function App() {
   const [city, setCity] = useState("");
   const [locationResults, setLocationResults] = useState([]);
   const [selectedLocation, setSelectedLocation] = useState("");
+  const [currentPlaceDetails, setCurrentPlaceDetails] = useState(null);
   const [searchingLocation, setSearchingLocation] = useState(false);
 
   const [weatherData, setWeatherData] = useState(null);
@@ -317,22 +318,22 @@ const speakFloodWarning = () => {
     englishMessage =
       "Warning! High flood risk detected. Avoid low-lying and flood-prone areas. Follow official local warnings.";
     hindiMessage =
-      "चेतावनी! बाढ़ का खतरा बहुत अधिक है। निचले और बाढ़ प्रभावित क्षेत्रों से दूर रहें। स्थानीय प्रशासन की चेतावनियों का पालन करें।";
+      "???????! ???? ?? ???? ???? ???? ??? ????? ?? ???? ???????? ????????? ?? ??? ????? ??????? ??????? ?? ?????????? ?? ???? ?????";
   } else if (risk === "MEDIUM") {
     englishMessage =
       "Warning! Moderate flood risk detected. Stay alert and monitor rainfall and weather conditions.";
     hindiMessage =
-      "चेतावनी! बाढ़ का खतरा मध्यम है। सतर्क रहें और बारिश तथा मौसम की स्थिति पर नज़र रखें।";
+      "???????! ???? ?? ???? ????? ??? ????? ???? ?? ????? ??? ???? ?? ?????? ?? ???? ?????";
   } else if (risk === "LOW") {
     englishMessage =
       "Low flood risk detected. No immediate major rainfall-related threat is indicated. Continue monitoring weather updates.";
     hindiMessage =
-      "बाढ़ का खतरा कम है। फिलहाल भारी बारिश से संबंधित किसी बड़े खतरे का संकेत नहीं है। मौसम की जानकारी देखते रहें।";
+      "???? ?? ???? ?? ??? ?????? ???? ????? ?? ??????? ???? ???? ???? ?? ????? ???? ??? ???? ?? ??????? ????? ?????";
   } else {
     englishMessage =
       "Flood risk information is currently unavailable.";
     hindiMessage =
-      "बाढ़ के खतरे की जानकारी फिलहाल उपलब्ध नहीं है।";
+      "???? ?? ???? ?? ??????? ?????? ?????? ???? ???";
   }
 
   window.speechSynthesis.cancel();
@@ -363,6 +364,7 @@ const speakFloodWarning = () => {
   const chooseLocation = (place) => {
     setLatitude(String(place.latitude));
     setLongitude(String(place.longitude));
+    setCurrentPlaceDetails(null);
 
     const locationName = [
      place.name,
@@ -388,9 +390,11 @@ const speakFloodWarning = () => {
     setTestMode(false);
     setError("");
   };
+
   // AUTOMATIC CURRENT LOCATION
   const detectCurrentLocation = () => {
     setError("");
+    setCurrentPlaceDetails(null);
 
     if (!navigator.geolocation) {
       setError(
@@ -402,9 +406,12 @@ const speakFloodWarning = () => {
     setLoading(true);
 
     navigator.geolocation.getCurrentPosition(
-      (position) => {
-        setLatitude(String(position.coords.latitude));
-        setLongitude(String(position.coords.longitude));
+      async (position) => {
+        const lat = position.coords.latitude;
+        const lon = position.coords.longitude;
+
+        setLatitude(String(lat));
+        setLongitude(String(lon));
         setSelectedLocation("Current Location");
         setCity("");
         setLocationResults([]);
@@ -412,18 +419,47 @@ const speakFloodWarning = () => {
         setForecastData(null);
         setTestPrediction(null);
         setTestMode(false);
-        setLoading(false);
+
+        try {
+          const response = await fetch(
+            `${API_BASE_URL}/reverse-geocode?lat=${lat}&lon=${lon}`
+          );
+
+          if (!response.ok) {
+            throw new Error("Place name lookup failed");
+          }
+
+          const details = await response.json();
+
+          setCurrentPlaceDetails(details);
+          setSelectedLocation(
+            details.place_name || "Current Location"
+          );
+        } catch (error) {
+          console.error("Reverse geocoding error:", error);
+          setCurrentPlaceDetails(null);
+          setSelectedLocation("Current Location");
+        } finally {
+          setLoading(false);
+        }
+
         setError("");
       },
       (locationError) => {
         setLoading(false);
 
         if (locationError.code === 1) {
-          setError("Location permission denied. Please allow location access in your browser.");
+          setError(
+            "Location permission denied. Please allow location access in your browser."
+          );
         } else if (locationError.code === 2) {
-          setError("Your current location could not be determined. Please try again.");
+          setError(
+            "Your current location could not be determined. Please try again."
+          );
         } else {
-          setError("Location request timed out. Please try again.");
+          setError(
+            "Location request timed out. Please try again."
+          );
         }
       },
       {
@@ -464,7 +500,9 @@ const speakFloodWarning = () => {
     }
   };
 
-
+  useEffect(() => {
+    getPredictionHistory();
+  }, []);
   // --------------------------------------------------
   // FLOOD RISK ANALYSIS
   // --------------------------------------------------
@@ -740,6 +778,10 @@ generateEarlyWarning(testResult);
     testMode && testPrediction
       ? testPrediction
       : weatherData?.prediction || null;
+        const forecastPrediction =
+    !testMode
+      ? weatherData?.forecast_prediction || null
+      : null;
 
   const risk =
     displayPrediction?.flood_risk ||
@@ -1316,7 +1358,29 @@ const earlyWarningMessage =
                   {selectedLocation ||
                     "Selected Location"}
                 </h2>
+{currentPlaceDetails && (
+  <div className="current-place-details">
+    <p>
+      <strong>Locality:</strong>{" "}
+      {currentPlaceDetails.locality || "Not available"}
+    </p>
 
+    <p>
+      <strong>District:</strong>{" "}
+      {currentPlaceDetails.district || "Not available"}
+    </p>
+
+    <p>
+      <strong>State:</strong>{" "}
+      {currentPlaceDetails.state || "Not available"}
+    </p>
+
+    <p>
+      <strong>Country:</strong>{" "}
+      {currentPlaceDetails.country || "Not available"}
+    </p>
+  </div>
+)}
               </div>
 
 
@@ -1704,6 +1768,34 @@ const earlyWarningMessage =
     "Random Forest"}
 
 </p>
+
+{/* FORECAST-BASED RISK */}
+
+{forecastPrediction && (
+  <div
+    style={{
+      marginTop: "18px",
+      padding: "16px",
+      borderRadius: "12px",
+      border: "1px solid #d1d5db",
+      backgroundColor: "#f8fafc",
+    }}
+  >
+    <p className="eyebrow">
+      FORECAST-BASED RISK
+    </p>
+
+    <h3 style={{ margin: "8px 0" }}>
+      {forecastPrediction.flood_risk}
+    </h3>
+
+    <p style={{ margin: 0, fontSize: "13px" }}>
+      Based on forecast rainfall thresholds.
+      This result is separate from the Random Forest
+      AI prediction.
+    </p>
+  </div>
+)}
 
 
                 {/* RISK PROBABILITY */}
