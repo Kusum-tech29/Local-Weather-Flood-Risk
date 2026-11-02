@@ -160,77 +160,67 @@ Retrieves elevation information using Open-Meteo with OpenTopoData as a fallback
 
 ```text
 
-&#x20;                 USER
+&#x20;                USER
 
-&#x20;                   |
+&#x20; |
 
-&#x20;                   v
+&#x20; v
 
-&#x20;          React + Vite Frontend
+React + Vite Frontend
 
-&#x20;                   |
+&#x20; |
 
-&#x20;                   v
+&#x20; v
 
-&#x20;              Flask Backend
+Flask Backend
 
-&#x20;                   |
+&#x20; |
 
-&#x20;         +---------+----------+
+&#x20; +----------------+----------------+
 
-&#x20;         |         |          |
+&#x20; |                |                |
 
-&#x20;         v         v          v
+&#x20; v                v                v
 
-&#x20;      Weather   Location   Elevation
+Weather APIs   Location Search   Elevation APIs
 
-&#x20;       APIs      Search      APIs
+&#x20; |                |                |
 
-&#x20;         |         |          |
+&#x20; +----------------+----------------+
 
-&#x20;         +---------+----------+
+&#x20;                  |
 
-&#x20;                   |
-
-&#x20;                   v
+&#x20;                  v
 
 &#x20;         Weather Data Processing
 
-&#x20;                   |
+&#x20;                  |
 
-&#x20;                   v
+&#x20;                  v
 
 &#x20;         Random Forest ML Model
 
-&#x20;                   |
+&#x20;                  |
 
-&#x20;                   v
+&#x20;                  v
 
 &#x20;          Flood Risk Estimate
 
-&#x20;                   |
+&#x20;                  |
 
-&#x20;            +------+------+
+&#x20;            +-----+-----+
 
-&#x20;            |             |
+&#x20;            |           |
 
-&#x20;            v             v
+&#x20;            v           v
 
-&#x20;       PostgreSQL DB   API Response
+&#x20;      PostgreSQL DB   API Response
 
-&#x20;            |             |
+&#x20;            |           |
 
-&#x20;            v             v
+&#x20;            v           v
 
-&#x20;      Prediction History React Dashboard
-
-```
-
-
-
-\---
-
-
+&#x20;     Prediction History React Dashboard
 
 \## 🛠️ Technology Stack
 
@@ -378,11 +368,7 @@ Local-Weather-Flood-Risk/
 
 └── README.md
 
-```
-
-
-
-\---
+\## ⚙️ Installation and Setup
 
 
 
@@ -508,13 +494,23 @@ http://127.0.0.1:5000
 
 
 
-Open another terminal:
+Open another terminal and navigate to the frontend folder:
 
 
 
 ```bash
 
 cd frontend
+
+```
+
+
+
+Install frontend dependencies:
+
+
+
+```bash
 
 npm install
 
@@ -548,15 +544,7 @@ npm run dev
 
 Open the local URL displayed by Vite in your browser.
 
-
-
-\---
-
-
-
 \## 🔌 Backend API Endpoints
-
-
 
 | Endpoint | Method | Purpose |
 
