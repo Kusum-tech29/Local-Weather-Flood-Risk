@@ -2,7 +2,7 @@
 
 
 
-An AI/ML-powered web application that provides location-based weather information, rainfall analysis, and an estimated flood-risk assessment for selected locations.
+An AI/ML-powered web application that provides location-based weather information, rainfall analysis, and estimated flood-risk assessment for selected locations.
 
 
 
@@ -22,11 +22,11 @@ An AI/ML-powered web application that provides location-based weather informatio
 
 
 
-The Local Weather \& Flood Risk Prediction System is designed to help users understand local weather conditions and assess potential flood risk using weather and rainfall data.
+The Local Weather \& Flood Risk Prediction System helps users understand local weather conditions and assess potential flood risk using weather and rainfall data.
 
 
 
-Users can search for a location or use their current location to retrieve weather information. The backend processes weather-related parameters and uses a trained Random Forest machine learning model to estimate flood-risk levels.
+Users can search for a location or use their current location to retrieve weather information. The Flask backend processes weather-related parameters and uses a trained Random Forest machine learning model to estimate flood-risk levels.
 
 
 
@@ -48,7 +48,7 @@ The application also provides rainfall analysis, forecast summaries, an interact
 
 \- Display prediction confidence and risk factors.
 
-\- Visualize location and nearby water features on a map.
+\- Visualize locations and nearby water features on a map.
 
 \- Maintain prediction history for analysis.
 
@@ -106,6 +106,8 @@ The application also provides rainfall analysis, forecast summaries, an interact
 
 \### 5. Forecast-Based Risk Assessment
 
+
+
 Uses forecast rainfall information and configured rainfall thresholds to provide a separate forecast-based risk category.
 
 
@@ -134,11 +136,15 @@ Uses forecast rainfall information and configured rainfall thresholds to provide
 
 \### 8. AI Test Mode
 
+
+
 Provides simulated LOW, MEDIUM, and HIGH scenarios for testing the user interface. These scenarios are not actual live-weather predictions.
 
 
 
 \### 9. Elevation Information
+
+
 
 Retrieves elevation information using Open-Meteo with OpenTopoData as a fallback.
 
@@ -154,71 +160,75 @@ Retrieves elevation information using Open-Meteo with OpenTopoData as a fallback
 
 ```text
 
-&#x20;            USER
+&#x20;                 USER
 
-&#x20;              |
+&#x20;                   |
 
-&#x20;              v
+&#x20;                   v
 
-&#x20;      React + Vite Frontend
+&#x20;          React + Vite Frontend
 
-&#x20;              |
+&#x20;                   |
 
-&#x20;              v
+&#x20;                   v
 
-&#x20;         Flask Backend
+&#x20;              Flask Backend
 
-&#x20;              |
+&#x20;                   |
 
-&#x20;      +-------+--------+
+&#x20;         +---------+----------+
 
-&#x20;      |       |        |
+&#x20;         |         |          |
 
-&#x20;      v       v        v
+&#x20;         v         v          v
 
-&#x20;  Weather   Location   Elevation
+&#x20;      Weather   Location   Elevation
 
-&#x20;    APIs     Search      APIs
+&#x20;       APIs      Search      APIs
 
-&#x20;      |       |        |
+&#x20;         |         |          |
 
-&#x20;      +-------+--------+
+&#x20;         +---------+----------+
 
-&#x20;              |
+&#x20;                   |
 
-&#x20;              v
+&#x20;                   v
 
-&#x20;      Weather Data Processing
+&#x20;         Weather Data Processing
 
-&#x20;              |
+&#x20;                   |
 
-&#x20;              v
+&#x20;                   v
 
-&#x20;      Random Forest ML Model
+&#x20;         Random Forest ML Model
 
-&#x20;              |
+&#x20;                   |
 
-&#x20;              v
+&#x20;                   v
 
-&#x20;       Flood Risk Estimate
+&#x20;          Flood Risk Estimate
 
-&#x20;              |
+&#x20;                   |
 
-&#x20;      +-------+--------+
+&#x20;            +------+------+
 
-&#x20;      |                |
+&#x20;            |             |
 
-&#x20;      v                v
+&#x20;            v             v
 
-&#x20; PostgreSQL DB    API Response
+&#x20;       PostgreSQL DB   API Response
 
-&#x20;      |                |
+&#x20;            |             |
 
-&#x20;      v                v
+&#x20;            v             v
 
-&#x20;Prediction History  React Dashboard
+&#x20;      Prediction History React Dashboard
 
 ```
+
+
+
+\---
 
 
 
@@ -322,23 +332,25 @@ Local-Weather-Flood-Risk/
 
 ├── requirements.txt
 
-├── train\_model.py
+├── Procfile
 
-├── evaluate\_model.py
+├── train\_model.py
 
 ├── prepare\_ml\_data.py
 
-│
+├── collect\_historical\_data.py
 
-├── models/
+├── package.json
 
-│   └── Trained ML model files
+├── package-lock.json
 
 │
 
 ├── data/
 
-│   └── Dataset files
+├── models/
+
+├── geonames\_india/
 
 │
 
@@ -356,15 +368,9 @@ Local-Weather-Flood-Risk/
 
 │   │   └── index.css
 
-│   │
-
 │   ├── package.json
 
 │   └── package-lock.json
-
-│
-
-├── geonames\_india/
 
 │
 
@@ -558,23 +564,19 @@ Open the local URL displayed by Vite in your browser.
 
 | `/` | GET | Backend health/status |
 
-| `/search-location` | Check implementation | Location search |
+| `/search-location` | GET | Location search |
 
-| `/search-place` | Check implementation | Place search |
+| `/search-place` | GET | Place search |
 
 | `/reverse-geocode` | GET | Coordinates to location |
 
-| `/test-weather` | Check implementation | Weather testing |
+| `/test-weather` | GET | Weather testing |
 
 | `/flood-risk` | POST | Live-weather flood-risk estimate |
 
 | `/test-flood-risk` | POST | Simulated risk testing |
 
 | `/prediction-history` | GET | Retrieve prediction history |
-
-
-
-The methods for routes not explicitly listed as GET or POST should be confirmed from the corresponding Flask route definitions before publishing final API documentation.
 
 
 
