@@ -692,6 +692,7 @@ def get_weather_data(latitude, longitude):
 
 def get_elevation_data(latitude, longitude):
 
+    # Primary API: Open-Meteo
     elevation_url = "https://api.open-meteo.com/v1/elevation"
 
     params = {
@@ -709,18 +710,13 @@ def get_elevation_data(latitude, longitude):
         response.raise_for_status()
 
         data = response.json()
-
         elevation_values = data.get("elevation", [])
 
-        if not elevation_values:
-            return None
+        if elevation_values:
+            elevation = float(elevation_values[0])
 
-        elevation = float(elevation_values[0])
-
-        if not math.isfinite(elevation):
-            return None
-
-        return elevation
+            if math.isfinite(elevation):
+                return elevation
 
     except (
         requests.exceptions.RequestException,
@@ -729,9 +725,49 @@ def get_elevation_data(latitude, longitude):
         KeyError
     ) as error:
 
-        print("WARNING: Elevation data unavailable:", error)
+        print("WARNING: Open-Meteo elevation unavailable:", error)
 
-        return None
+    # Fallback API: OpenTopoData
+    try:
+        fallback_url = (
+            "https://api.opentopodata.org/v1/srtm90m"
+        )
+
+        fallback_params = {
+            "locations": f"{latitude},{longitude}"
+        }
+
+        response = requests.get(
+            fallback_url,
+            params=fallback_params,
+            timeout=15
+        )
+
+        response.raise_for_status()
+
+        data = response.json()
+        results = data.get("results", [])
+
+        if results and results[0].get("elevation") is not None:
+
+            elevation = float(results[0]["elevation"])
+
+            if math.isfinite(elevation):
+                print("Elevation fetched successfully using OpenTopoData.")
+                return elevation
+
+        print("WARNING: OpenTopoData returned no elevation data.")
+
+    except (
+        requests.exceptions.RequestException,
+        ValueError,
+        TypeError,
+        KeyError
+    ) as error:
+
+        print("WARNING: OpenTopoData elevation unavailable:", error)
+
+    return None
 # ==================================================
 # WEATHER TEST ROUTE
 # ==================================================
