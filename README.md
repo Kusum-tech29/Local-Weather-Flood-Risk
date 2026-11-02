@@ -152,15 +152,13 @@ Retrieves elevation information using Open-Meteo with OpenTopoData as a fallback
 
 \---
 
-
-
 \## 🏗️ System Architecture
 
 
 
 ```text
 
-&#x20;                USER
+USER
 
 &#x20; |
 
@@ -221,6 +219,8 @@ Weather APIs   Location Search   Elevation APIs
 &#x20;            v           v
 
 &#x20;     Prediction History React Dashboard
+
+```
 
 \## 🛠️ Technology Stack
 
@@ -306,8 +306,6 @@ Weather APIs   Location Search   Elevation APIs
 
 \---
 
-
-
 \## 📂 Project Structure
 
 
@@ -368,7 +366,11 @@ Local-Weather-Flood-Risk/
 
 └── README.md
 
-\## ⚙️ Installation and Setup
+```
+
+
+
+\---
 
 
 
@@ -377,8 +379,6 @@ Local-Weather-Flood-Risk/
 
 
 \### Prerequisites
-
-
 
 \- Python 3.10 or later
 
@@ -544,7 +544,11 @@ npm run dev
 
 Open the local URL displayed by Vite in your browser.
 
+
+
 \## 🔌 Backend API Endpoints
+
+
 
 | Endpoint | Method | Purpose |
 
@@ -587,8 +591,6 @@ Open the local URL displayed by Vite in your browser.
 
 
 \---
-
-
 
 \## 🤖 Machine Learning Approach
 
