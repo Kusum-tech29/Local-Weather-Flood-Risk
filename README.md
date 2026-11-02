@@ -152,76 +152,40 @@ Retrieves elevation information using Open-Meteo with OpenTopoData as a fallback
 
 \---
 
-\## 🏗️ System Architecture
-
-
+## 🏗️ System Architecture
 
 ```text
-
 USER
-
-&#x20; |
-
-&#x20; v
-
+  |
+  v
 React + Vite Frontend
-
-&#x20; |
-
-&#x20; v
-
+  |
+  v
 Flask Backend
-
-&#x20; |
-
-&#x20; +----------------+----------------+
-
-&#x20; |                |                |
-
-&#x20; v                v                v
-
+  |
+  +----------------+----------------+
+  |                |                |
+  v                v                v
 Weather APIs   Location Search   Elevation APIs
-
-&#x20; |                |                |
-
-&#x20; +----------------+----------------+
-
-&#x20;                  |
-
-&#x20;                  v
-
-&#x20;         Weather Data Processing
-
-&#x20;                  |
-
-&#x20;                  v
-
-&#x20;         Random Forest ML Model
-
-&#x20;                  |
-
-&#x20;                  v
-
-&#x20;          Flood Risk Estimate
-
-&#x20;                  |
-
-&#x20;            +-----+-----+
-
-&#x20;            |           |
-
-&#x20;            v           v
-
-&#x20;      PostgreSQL DB   API Response
-
-&#x20;            |           |
-
-&#x20;            v           v
-
-&#x20;     Prediction History React Dashboard
-
-```
-
+  |                |                |
+  +----------------+----------------+
+                   |
+                   v
+          Weather Data Processing
+                   |
+                   v
+          Random Forest ML Model
+                   |
+                   v
+           Flood Risk Estimate
+                   |
+             +-----+-----+
+             |           |
+             v           v
+       PostgreSQL DB   API Response
+             |           |
+             v           v
+      Prediction History React Dashboard
 \## 🛠️ Technology Stack
 
 
